@@ -1,9 +1,15 @@
 import { inspectDns, queryDns } from "./dns";
 import { buildFindings } from "./findings";
-import { BlockedTargetError, isPublicIp, normalizeUrl, safeRedirect } from "./security";
+import {
+  BlockedTargetError,
+  isPublicIp,
+  normalizeUrl,
+  redactUrlForStorage,
+  safeRedirect,
+} from "./security";
 import type { Dependency, RedirectHop, ScanReport } from "./types";
 
-const MAX_REDIRECTS = 8;
+const MAX_REDIRECTS = 6;
 const MAX_BODY_BYTES = 256 * 1024;
 const MAX_DEPENDENCIES = 100;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
@@ -35,18 +41,29 @@ const STORED_HEADERS = new Set([
   "x-robots-tag",
 ]);
 
+export interface AnalyzerProgress {
+  stage: "validated" | "dns" | "hop" | "response" | "complete";
+  message: string;
+  hop?: number;
+  status?: number;
+}
+
 export async function analyzeUrl(
   rawUrl: unknown,
   retentionDays: number,
   observer: { colo?: string; country?: string } = {},
+  onProgress: (event: AnalyzerProgress) => void = () => {},
 ): Promise<ScanReport> {
   const started = performance.now();
   const initial = normalizeUrl(rawUrl);
+  onProgress({ stage: "validated", message: `Validated ${initial.hostname}` });
   const id = randomId();
   const createdAt = new Date();
   const expiresAt = new Date(createdAt.getTime() + retentionDays * 86_400_000);
   const dnsQueries = await inspectDns(initial.hostname);
   assertPublicResolution(initial.hostname, dnsQueries);
+  await assertSecondaryResolutionPublic(initial.hostname);
+  onProgress({ stage: "dns", message: `Resolved ${addressAnswers(dnsQueries).length} public address records` });
 
   const hops: RedirectHop[] = [];
   let current = initial;
@@ -57,55 +74,24 @@ export async function analyzeUrl(
   let status: ScanReport["status"] = "complete";
 
   for (let index = 0; index <= MAX_REDIRECTS; index += 1) {
-    if (index > 0) await assertTargetPublic(current.hostname);
     const hopStarted = performance.now();
+    let response: Response;
     try {
-      const response = await fetch(current.toString(), {
+      response = await fetch(current.toString(), {
         method: "GET",
         redirect: "manual",
+        cache: "no-store",
         headers: {
           Accept: "text/html,application/xhtml+xml,application/json;q=0.8,*/*;q=0.5",
           "User-Agent": "RequestScope/1.0 (+https://requestscope.pages.dev)",
         },
         signal: AbortSignal.timeout(10_000),
       });
-      const location = response.headers.get("location");
-      hops.push({
-        index,
-        url: current.toString(),
-        hostname: current.hostname,
-        status: response.status,
-        statusText: response.statusText,
-        elapsedMs: Math.round(performance.now() - hopStarted),
-        location,
-        responseHeaders: selectHeaders(response.headers),
-        cf: extractCf(response),
-        evidenceKind: "edge_http_observation",
-      });
-
-      if (REDIRECT_STATUSES.has(response.status) && location) {
-        if (index === MAX_REDIRECTS) {
-          status = "partial";
-          hops[hops.length - 1].error = `Redirect limit of ${MAX_REDIRECTS} reached`;
-          response.body?.cancel();
-          break;
-        }
-        response.body?.cancel();
-        current = safeRedirect(current, location);
-        continue;
-      }
-
-      finalResponse = response;
-      const body = await readBoundedBody(response, MAX_BODY_BYTES);
-      bodyText = body.text;
-      bytesInspected = body.bytes;
-      truncated = body.truncated;
-      break;
     } catch (error) {
       status = hops.length > 0 ? "partial" : "failed";
       hops.push({
         index,
-        url: current.toString(),
+        url: redactUrlForStorage(current.toString()),
         hostname: current.hostname,
         status: 0,
         statusText: "Request failed",
@@ -113,23 +99,85 @@ export async function analyzeUrl(
         location: null,
         responseHeaders: {},
         cf: {},
-        error: error instanceof Error ? error.message : "Request failed",
+        error: error instanceof DOMException && error.name === "TimeoutError"
+          ? "Request timed out after 10 seconds"
+          : "Network request failed",
         evidenceKind: "edge_http_observation",
       });
+      onProgress({ stage: "hop", hop: index, status: 0, message: `Request to ${current.hostname} failed` });
       break;
     }
+
+    const location = response.headers.get("location");
+    const hop: RedirectHop = {
+      index,
+      url: redactUrlForStorage(current.toString()),
+      hostname: current.hostname,
+      status: response.status,
+      statusText: response.statusText,
+      elapsedMs: Math.round(performance.now() - hopStarted),
+      location: location ? redactRedirectLocation(current, location) : null,
+      responseHeaders: selectHeaders(response.headers),
+      cf: extractCf(response),
+      evidenceKind: "edge_http_observation",
+    };
+    if (hop.responseHeaders.location) {
+      hop.responseHeaders.location = redactRedirectLocation(current, hop.responseHeaders.location);
+    }
+    hops.push(hop);
+    onProgress({
+      stage: "hop",
+      hop: index,
+      status: response.status,
+      message: `Received HTTP ${response.status} from ${current.hostname}`,
+    });
+
+    if (REDIRECT_STATUSES.has(response.status) && location) {
+      if (index === MAX_REDIRECTS) {
+        status = "partial";
+        hop.error = `Redirect limit of ${MAX_REDIRECTS} reached`;
+        response.body?.cancel();
+        break;
+      }
+      try {
+        const next = safeRedirect(current, location);
+        await assertTargetPublic(next.hostname);
+        response.body?.cancel();
+        current = next;
+      } catch (error) {
+        status = "partial";
+        hop.error = error instanceof Error ? `Redirect blocked: ${error.message}` : "Redirect target blocked";
+        response.body?.cancel();
+        break;
+      }
+      continue;
+    }
+
+    finalResponse = response;
+    try {
+      const body = await readBoundedBody(response, MAX_BODY_BYTES);
+      bodyText = body.text;
+      bytesInspected = body.bytes;
+      truncated = body.truncated;
+    } catch (error) {
+      status = "partial";
+      hop.error = "Response inspection failed before the bounded body could be decoded";
+    }
+    onProgress({ stage: "response", message: `Inspected ${bytesInspected} response bytes` });
+    break;
   }
 
-  const dependencies = finalResponse && isHtml(finalResponse.headers.get("content-type"))
+  const dependenciesRaw = finalResponse && isHtml(finalResponse.headers.get("content-type"))
     ? extractDependencies(bodyText, current)
     : [];
+  const dependencies = dependenciesRaw.map((item) => ({ ...item, url: redactUrlForStorage(item.url) }));
   const uniqueHosts = [...new Set(dependencies.map((item) => item.host))].sort();
   const base = {
     schemaVersion: 1 as const,
     id,
-    requestedUrl: String(rawUrl).trim(),
-    normalizedUrl: initial.toString(),
-    finalUrl: finalResponse ? current.toString() : null,
+    requestedUrl: redactUrlForStorage(initial.toString()),
+    normalizedUrl: redactUrlForStorage(initial.toString()),
+    finalUrl: finalResponse ? redactUrlForStorage(current.toString()) : null,
     hostname: initial.hostname,
     status,
     createdAt: createdAt.toISOString(),
@@ -168,11 +216,24 @@ export async function analyzeUrl(
     positive: findings.filter((item) => item.severity === "positive").length,
     info: findings.filter((item) => item.severity === "info").length,
   };
+  onProgress({ stage: "complete", message: "Report complete" });
   return { ...base, findings, summary };
 }
 
 async function assertTargetPublic(hostname: string): Promise<void> {
-  const results = await Promise.all([queryDns(hostname, "A"), queryDns(hostname, "AAAA")]);
+  const [cloudflare, google] = await Promise.all([
+    Promise.all([queryDns(hostname, "A"), queryDns(hostname, "AAAA")]),
+    Promise.all([queryDns(hostname, "A", "google"), queryDns(hostname, "AAAA", "google")]),
+  ]);
+  assertPublicResolution(hostname, cloudflare);
+  assertPublicResolution(hostname, google);
+}
+
+async function assertSecondaryResolutionPublic(hostname: string): Promise<void> {
+  const results = await Promise.all([
+    queryDns(hostname, "A", "google"),
+    queryDns(hostname, "AAAA", "google"),
+  ]);
   assertPublicResolution(hostname, results);
 }
 
@@ -199,6 +260,14 @@ function selectHeaders(headers: Headers): Record<string, string> {
     if (STORED_HEADERS.has(name.toLowerCase())) selected[name.toLowerCase()] = value.slice(0, 4096);
   }
   return selected;
+}
+
+function redactRedirectLocation(current: URL, location: string): string {
+  try {
+    return redactUrlForStorage(new URL(location, current).toString());
+  } catch {
+    return "[invalid redirect URL]";
+  }
 }
 
 function extractCf(response: Response): RedirectHop["cf"] {
@@ -257,6 +326,8 @@ function extractDependencies(html: string, pageUrl: URL): Dependency[] {
     [/<img\b[^>]*\bsrc\s*=\s*["']([^"'<>]+)["']/gi, "image"],
     [/<iframe\b[^>]*\bsrc\s*=\s*["']([^"'<>]+)["']/gi, "frame"],
     [/<(?:video|audio|source)\b[^>]*\bsrc\s*=\s*["']([^"'<>]+)["']/gi, "media"],
+    [/<(?:img|source)\b[^>]*\bsrcset\s*=\s*["']([^"'<>]+)["']/gi, "image"],
+    [/\burl\(\s*["']?([^"')<>]+)["']?\s*\)/gi, "other"],
   ];
   const seen = new Set<string>();
   const results: Dependency[] = [];
@@ -264,7 +335,9 @@ function extractDependencies(html: string, pageUrl: URL): Dependency[] {
   for (const [pattern, defaultType] of patterns) {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(html)) && results.length < MAX_DEPENDENCIES) {
-      const raw = decodeHtmlAttribute(match[1]);
+      const raw = decodeHtmlAttribute(defaultType === "image" && match[0].toLowerCase().includes("srcset")
+        ? match[1].split(",")[0].trim().split(/\s+/)[0]
+        : match[1]);
       if (!raw || /^(?:data:|blob:|javascript:|mailto:|tel:|#)/i.test(raw)) continue;
       try {
         const url = new URL(raw, pageUrl);

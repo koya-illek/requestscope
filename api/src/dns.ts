@@ -1,6 +1,8 @@
 import type { DnsAnswer, DnsQueryResult } from "./types";
+import { getDomain } from "tldts";
 
 const DOH_ENDPOINT = "https://cloudflare-dns.com/dns-query";
+const GOOGLE_DOH_ENDPOINT = "https://dns.google/resolve";
 const TYPE_NAMES: Record<number, string> = {
   1: "A",
   2: "NS",
@@ -18,9 +20,14 @@ interface DnsJson {
   Answer?: Array<{ name: string; type: number; TTL: number; data: string }>;
 }
 
-export async function queryDns(name: string, type: string): Promise<DnsQueryResult> {
+export async function queryDns(
+  name: string,
+  type: string,
+  provider: "cloudflare" | "google" = "cloudflare",
+): Promise<DnsQueryResult> {
   const started = performance.now();
-  const url = `${DOH_ENDPOINT}?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}&do=true`;
+  const endpoint = provider === "google" ? GOOGLE_DOH_ENDPOINT : DOH_ENDPOINT;
+  const url = `${endpoint}?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}&do=true`;
 
   try {
     const response = await fetch(url, {
@@ -36,7 +43,7 @@ export async function queryDns(name: string, type: string): Promise<DnsQueryResu
       data: answer.data.replace(/\.$/, ""),
     }));
     return {
-      resolver: "Cloudflare DNS",
+      resolver: provider === "google" ? "Google Public DNS" : "Cloudflare DNS",
       name,
       type,
       status: payload.Status ?? -1,
@@ -47,7 +54,7 @@ export async function queryDns(name: string, type: string): Promise<DnsQueryResu
     };
   } catch (error) {
     return {
-      resolver: "Cloudflare DNS",
+      resolver: provider === "google" ? "Google Public DNS" : "Cloudflare DNS",
       name,
       type,
       status: -1,
@@ -73,9 +80,5 @@ export async function inspectDns(hostname: string): Promise<DnsQueryResult[]> {
 }
 
 function registrableApproximation(hostname: string): string {
-  const parts = hostname.split(".");
-  const commonSecondLevel = new Set(["co.uk", "org.uk", "com.au", "co.nz", "co.za", "com.br"]);
-  const lastTwo = parts.slice(-2).join(".");
-  if (parts.length >= 3 && commonSecondLevel.has(lastTwo)) return parts.slice(-3).join(".");
-  return lastTwo;
+  return getDomain(hostname, { allowPrivateDomains: true }) || hostname;
 }

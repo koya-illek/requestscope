@@ -16,21 +16,24 @@ export function buildFindings(report: Omit<ScanReport, "findings" | "summary">):
   const hops = report.http.hops;
   const final = hops.at(-1);
   const finalHeaders = final?.responseHeaders || {};
+  const redirectCount = hops.filter((hop) =>
+    [301, 302, 303, 307, 308].includes(hop.status) && Boolean(hop.location),
+  ).length;
 
-  if (hops.length > 3) {
+  if (redirectCount > 2) {
     findings.push(finding(
       "redirect-chain-long",
       "warning",
       "Long redirect chain",
-      `${hops.length - 1} redirects were followed before the final response. Each hop adds another network round trip.`,
+      `${redirectCount} redirects were followed before the final response. Each hop adds another network round trip.`,
       "http.hops",
     ));
-  } else if (hops.length > 1) {
+  } else if (redirectCount > 0) {
     findings.push(finding(
       "redirect-chain",
       "info",
       "Redirects observed",
-      `${hops.length - 1} redirect${hops.length === 2 ? " was" : "s were"} followed before the final response.`,
+      `${redirectCount} redirect${redirectCount === 1 ? " was" : "s were"} followed before the final response.`,
       "http.hops",
     ));
   }
@@ -43,7 +46,7 @@ export function buildFindings(report: Omit<ScanReport, "findings" | "summary">):
       "The observed redirect path ended on an HTTPS URL.",
       "finalUrl",
     ));
-  } else {
+  } else if (report.finalUrl?.startsWith("http://")) {
     findings.push(finding(
       "http-final",
       "critical",
@@ -74,7 +77,7 @@ export function buildFindings(report: Omit<ScanReport, "findings" | "summary">):
   }
 
   const cacheControl = finalHeaders["cache-control"];
-  if (!cacheControl) {
+  if (final && final.status > 0 && !cacheControl) {
     findings.push(finding(
       "cache-control-missing",
       "info",
@@ -107,7 +110,7 @@ export function buildFindings(report: Omit<ScanReport, "findings" | "summary">):
     ["referrer-policy", "Referrer-Policy"],
   ];
   const missing = requiredSecurityHeaders.filter(([key]) => !finalHeaders[key]).map(([, label]) => label);
-  if (missing.length > 0) {
+  if (final && final.status > 0 && missing.length > 0) {
     findings.push(finding(
       "security-headers-missing",
       "warning",
@@ -116,7 +119,7 @@ export function buildFindings(report: Omit<ScanReport, "findings" | "summary">):
       `http.hops.${Math.max(0, hops.length - 1)}.responseHeaders`,
       "medium",
     ));
-  } else {
+  } else if (final && final.status > 0) {
     findings.push(finding(
       "security-headers-present",
       "positive",
@@ -130,7 +133,7 @@ export function buildFindings(report: Omit<ScanReport, "findings" | "summary">):
     findings.push(finding(
       "third-party-heavy",
       "warning",
-      "Many third-party dependencies",
+      "Many third-party resource references",
       `${report.dependencies.thirdParty} third-party resource references were found in the inspected HTML.`,
       "dependencies.items",
       "medium",
@@ -139,7 +142,7 @@ export function buildFindings(report: Omit<ScanReport, "findings" | "summary">):
     findings.push(finding(
       "third-party-present",
       "info",
-      "Third-party dependencies observed",
+      "Third-party resource references observed",
       `${report.dependencies.thirdParty} third-party resource reference${report.dependencies.thirdParty === 1 ? " was" : "s were"} found.`,
       "dependencies.items",
       "medium",

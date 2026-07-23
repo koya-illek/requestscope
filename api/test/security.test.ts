@@ -4,6 +4,7 @@ import {
   InputError,
   isPublicIp,
   normalizeUrl,
+  redactUrlForStorage,
   safeRedirect,
 } from "../src/security";
 
@@ -27,6 +28,19 @@ describe("normalizeUrl", () => {
     "http://[::1]",
   ])("rejects IP-literal input %s", (value) => {
     expect(() => normalizeUrl(value)).toThrow(BlockedTargetError);
+  });
+});
+
+describe("report URL redaction", () => {
+  it("redacts every query value while preserving parameter names", () => {
+    const redacted = new URL(redactUrlForStorage("https://example.com/reset?token=secret&next=%2Fhome"));
+    expect(redacted.searchParams.get("token")).toBe("[redacted]");
+    expect(redacted.searchParams.get("next")).toBe("[redacted]");
+    expect(redacted.pathname).toBe("/reset");
+  });
+
+  it("does not change URLs without query parameters", () => {
+    expect(redactUrlForStorage("https://example.com/path")).toBe("https://example.com/path");
   });
 });
 

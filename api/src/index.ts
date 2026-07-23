@@ -1,9 +1,16 @@
-import { analyzeUrl } from "./analyzer";
-import { allowedOrigin, BlockedTargetError, InputError } from "./security";
+import { analyzeUrl, type AnalyzerProgress } from "./analyzer";
+import {
+  allowedOrigin,
+  BlockedTargetError,
+  InputError,
+  normalizeUrl,
+} from "./security";
 import type { Env, ScanReport } from "./types";
 
-const API_VERSION = "1.0.0";
+const API_VERSION = "1.1.0";
 const REPORT_ID = /^[A-Za-z0-9_-]{16}$/;
+const MAX_REQUEST_BYTES = 8192;
+const RECENT_SCAN_TTL = 300;
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -26,10 +33,10 @@ export default {
           service: "RequestScope API",
           version: API_VERSION,
           website: "https://requestscope.pages.dev/",
-          documentation: "https://requestscope.pages.dev/#methodology",
           endpoints: {
             health: "GET /api/health",
             createScan: "POST /api/scans",
+            streamScan: "POST /api/scans/stream",
             getScan: "GET /api/scans/:id",
             exportScan: "GET /api/scans/:id/export",
           },
@@ -42,29 +49,19 @@ export default {
           service: "requestscope-api",
           version: API_VERSION,
           environment: env.ENVIRONMENT,
+          protection: env.TURNSTILE_SECRET ? "turnstile" : "rate-limit",
           time: new Date().toISOString(),
         }, 200, cors);
       }
 
-      if (url.pathname === "/api/scans" && request.method === "POST") {
+      if ((url.pathname === "/api/scans" || url.pathname === "/api/scans/stream") && request.method === "POST") {
         if (request.headers.get("Origin") && !origin) return json({ error: "Origin not allowed" }, 403, cors);
-        const contentLength = Number.parseInt(request.headers.get("content-length") || "0", 10);
-        if (contentLength > 4096) return json({ error: "Request body is too large" }, 413, cors);
-        await enforceRateLimit(request, env);
-        const contentType = request.headers.get("content-type") || "";
-        if (!contentType.toLowerCase().includes("application/json")) {
-          return json({ error: "Content-Type must be application/json" }, 415, cors);
+        const input = await readScanInput(request);
+        if (url.pathname.endsWith("/stream")) {
+          return streamScan(request, input, env, ctx, cors);
         }
-        const body = await request.json<{ url?: unknown }>();
-        const retention = clampInt(env.REPORT_RETENTION_DAYS, 30, 1, 90);
-        const incomingCf = request.cf as Record<string, unknown> | undefined;
-        const report = await analyzeUrl(body.url, retention, {
-          colo: typeof incomingCf?.colo === "string" ? incomingCf.colo : undefined,
-          country: typeof incomingCf?.country === "string" ? incomingCf.country : undefined,
-        });
-        await saveReport(env.DB, report);
-        ctx.waitUntil(cleanExpired(env.DB));
-        return json(report, 201, cors);
+        const report = await createScan(request, input, env, ctx);
+        return json(report, 201, { ...cors, "Cache-Control": "no-store" });
       }
 
       const match = url.pathname.match(/^\/api\/scans\/([A-Za-z0-9_-]+)(\/export)?$/);
@@ -88,23 +85,167 @@ export default {
 
       return json({ error: "Not found" }, 404, cors);
     } catch (error) {
-      if (error instanceof InputError || error instanceof BlockedTargetError) {
-        return json({ error: error.message }, error.status, cors);
-      }
-      if (error instanceof SyntaxError) return json({ error: "Invalid JSON request body" }, 400, cors);
-      if (error instanceof RateLimitError) {
-        return json({ error: error.message }, 429, { ...cors, "Retry-After": "3600" });
-      }
-      console.error("request_failed", error);
-      return json({ error: "The trace could not be completed. Please try again." }, 500, cors);
+      return errorResponse(error, cors);
     }
+  },
+
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(cleanExpired(env.DB));
   },
 };
 
+interface ScanInput {
+  url: string;
+  turnstileToken?: string;
+}
+
 class RateLimitError extends Error {}
+class TurnstileError extends Error {}
+
+async function readScanInput(request: Request): Promise<ScanInput> {
+  const contentType = request.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    throw new InputError("Content-Type must be application/json.");
+  }
+  if (!request.body) throw new InputError("Request body is required.");
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_REQUEST_BYTES) {
+        await reader.cancel();
+        throw new InputError("Request body is too large.");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    throw new InputError("Invalid JSON request body.");
+  }
+  if (!parsed || typeof parsed !== "object") throw new InputError("JSON request body must be an object.");
+  const body = parsed as Record<string, unknown>;
+  if (typeof body.url !== "string") throw new InputError("A URL is required.");
+  return {
+    url: body.url,
+    turnstileToken: typeof body.turnstileToken === "string" ? body.turnstileToken : undefined,
+  };
+}
+
+async function createScan(
+  request: Request,
+  input: ScanInput,
+  env: Env,
+  ctx: ExecutionContext,
+  onProgress: (event: AnalyzerProgress) => void = () => {},
+): Promise<ScanReport> {
+  const normalized = normalizeUrl(input.url);
+  const cacheKey = await recentScanCacheKey(request.url, normalized.toString());
+  const recentCache = await caches.open("requestscope-recent");
+  const cached = await recentCache.match(cacheKey);
+  if (cached) {
+    const report = await cached.json<ScanReport>();
+    onProgress({ stage: "complete", message: "Loaded a recent edge observation" });
+    return report;
+  }
+
+  await verifyTurnstile(request, input.turnstileToken, env);
+  await enforceRateLimit(request, env);
+  const retention = clampInt(env.REPORT_RETENTION_DAYS, 14, 1, 90);
+  const incomingCf = request.cf as Record<string, unknown> | undefined;
+  const report = await analyzeUrl(input.url, retention, {
+    colo: typeof incomingCf?.colo === "string" ? incomingCf.colo : undefined,
+    country: typeof incomingCf?.country === "string" ? incomingCf.country : undefined,
+  }, onProgress);
+  await saveReport(env.DB, report);
+  const cacheResponse = new Response(JSON.stringify(report), {
+    headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${RECENT_SCAN_TTL}` },
+  });
+  ctx.waitUntil(recentCache.put(cacheKey, cacheResponse));
+  return report;
+}
+
+function streamScan(
+  request: Request,
+  input: ScanInput,
+  env: Env,
+  ctx: ExecutionContext,
+  cors: Record<string, string>,
+): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (value: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(value)}\n`));
+      try {
+        send({ type: "progress", stage: "accepted", message: "Trace accepted" });
+        const report = await createScan(request, input, env, ctx, (event) => send({ type: "progress", ...event }));
+        send({ type: "result", report });
+      } catch (error) {
+        const normalized = normalizeError(error);
+        send({ type: "error", error: normalized.message, status: normalized.status });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      ...cors,
+      ...securityHeaders(),
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+
+export async function verifyTurnstile(request: Request, token: string | undefined, env: Env): Promise<void> {
+  if (!env.TURNSTILE_SECRET) return;
+  if (!token || token.length > 2048) throw new TurnstileError("Complete the human verification before tracing.");
+  const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      secret: env.TURNSTILE_SECRET,
+      response: token,
+      remoteip: request.headers.get("CF-Connecting-IP") || undefined,
+      idempotency_key: crypto.randomUUID(),
+    }),
+    signal: AbortSignal.timeout(5000),
+  });
+  const result = await response.json<{ success?: boolean; hostname?: string; action?: string }>();
+  const validHost = ["requestscope.pages.dev", "localhost", "127.0.0.1"].includes(result.hostname || "");
+  if (!response.ok || !result.success || !validHost || result.action !== "requestscope_scan") {
+    throw new TurnstileError("Human verification failed. Refresh the challenge and try again.");
+  }
+}
+
+async function recentScanCacheKey(requestUrl: string, targetUrl: string): Promise<Request> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(targetUrl));
+  const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  const base = new URL(requestUrl);
+  return new Request(`${base.origin}/__recent_scan/${hash}`, { method: "GET" });
+}
 
 async function enforceRateLimit(request: Request, env: Env): Promise<void> {
-  const limit = clampInt(env.DAILY_SCAN_LIMIT, 30, 1, 500);
+  const limit = clampInt(env.DAILY_SCAN_LIMIT, 15, 1, 500);
   const date = new Date().toISOString().slice(0, 10);
   const ip = request.headers.get("CF-Connecting-IP") || "local";
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${date}:${ip}`));
@@ -148,7 +289,6 @@ async function loadReport(db: D1Database, id: string): Promise<ScanReport | null
 }
 
 async function cleanExpired(db: D1Database): Promise<void> {
-  if (Math.random() > 0.05) return;
   const today = new Date().toISOString();
   await db.batch([
     db.prepare("DELETE FROM scans WHERE expires_at <= ?").bind(today),
@@ -177,6 +317,22 @@ function securityHeaders(): Record<string, string> {
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
     "X-Frame-Options": "DENY",
   };
+}
+
+function normalizeError(error: unknown): { status: number; message: string } {
+  if (error instanceof InputError || error instanceof BlockedTargetError) return { status: error.status, message: error.message };
+  if (error instanceof RateLimitError) return { status: 429, message: error.message };
+  if (error instanceof TurnstileError) return { status: 403, message: error.message };
+  console.error("request_failed", error);
+  return { status: 500, message: "The trace could not be completed. Please try again." };
+}
+
+function errorResponse(error: unknown, cors: Record<string, string>): Response {
+  const normalized = normalizeError(error);
+  return json({ error: normalized.message }, normalized.status, {
+    ...cors,
+    ...(normalized.status === 429 ? { "Retry-After": "3600" } : {}),
+  });
 }
 
 function json(payload: unknown, status = 200, extra: Record<string, string> = {}): Response {

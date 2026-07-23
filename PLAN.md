@@ -5,13 +5,16 @@
 - Public URL trace
 - DNS A, AAAA, CNAME, NS and CAA observations
 - Manual redirect timeline
+- Real NDJSON progress events for validation, DNS, HTTP, response inspection, and completion
 - HTTP timing and selected response metadata
 - Cache and security-header analysis
-- HTML dependency inventory
+- Bounded HTML resource-reference inventory
 - Evidence-linked deterministic findings
 - Shareable 14-day reports
 - JSON export
 - Anonymous abuse controls
+- Server-validated Turnstile
+- Privacy redaction for all URL query values
 - Responsive visual interface
 
 ## Version 1.1

@@ -110,4 +110,5 @@ export interface Env {
   REPORT_RETENTION_DAYS: string;
   DAILY_SCAN_LIMIT: string;
   ENVIRONMENT: string;
+  TURNSTILE_SECRET?: string;
 }

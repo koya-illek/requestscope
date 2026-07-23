@@ -2,8 +2,8 @@
 
 RequestScope shows every observable step between a URL and the page it delivers.
 It performs an evidence-labelled DNS and HTTP trace, follows redirects manually,
-inspects response and cache behaviour, extracts page dependencies, and creates a
-shareable report.
+inspects response and cache behaviour, extracts bounded HTML resource references,
+and creates a privacy-redacted shareable report.
 
 ## Architecture
 
@@ -46,7 +46,8 @@ Serve `web/` with any static web server and set its API endpoint in
 ```text
 GET  /api/health
 GET  /api
-POST /api/scans       {"url":"https://example.com"}
+POST /api/scans       {"url":"https://example.com","turnstileToken":"..."}
+POST /api/scans/stream  NDJSON progress stream and final report
 GET  /api/scans/:id
 GET  /api/scans/:id/export
 ```
@@ -54,3 +55,5 @@ GET  /api/scans/:id/export
 The Worker root redirects human visitors to the Pages application.
 
 Reports expire after 14 days by default. No raw visitor IP address is stored.
+Query parameter names are retained for evidence, but their values are redacted
+before reports enter D1, responses, exports, or share links.

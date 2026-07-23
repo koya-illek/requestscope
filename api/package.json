@@ -1,6 +1,6 @@
 {
   "name": "requestscope-api",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,5 +14,8 @@
     "typescript": "^5.9.2",
     "vitest": "^3.2.4",
     "wrangler": "^4.113.0"
+  },
+  "dependencies": {
+    "tldts": "^7.4.9"
   }
 }

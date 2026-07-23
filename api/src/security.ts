@@ -40,6 +40,20 @@ export function normalizeUrl(input: unknown): URL {
   return url;
 }
 
+export function redactUrlForStorage(input: string): string {
+  try {
+    const url = new URL(input);
+    if (url.search) {
+      for (const key of [...url.searchParams.keys()]) {
+        url.searchParams.set(key, "[redacted]");
+      }
+    }
+    return url.toString();
+  } catch {
+    return "[invalid URL]";
+  }
+}
+
 export function isValidHostname(hostname: string): boolean {
   if (hostname.length > 253 || hostname.length < 4 || !hostname.includes(".")) return false;
   if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local")) return false;

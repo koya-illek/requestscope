@@ -70,4 +70,22 @@ describe("buildFindings", () => {
     const findings = buildFindings(report({ finalUrl: "http://example.com/" }));
     expect(findings.find((item) => item.code === "http-final")?.severity).toBe("critical");
   });
+
+  it("does not invent protocol or header findings when no final response exists", () => {
+    const failed = report({
+      finalUrl: null,
+      status: "failed",
+      http: {
+        hops: [],
+        finalStatus: null,
+        contentType: null,
+        contentBytesInspected: 0,
+        truncated: false,
+      },
+    });
+    const findings = buildFindings(failed);
+    expect(findings.some((item) => item.code === "http-final")).toBe(false);
+    expect(findings.some((item) => item.code === "cache-control-missing")).toBe(false);
+    expect(findings.some((item) => item.code === "security-headers-missing")).toBe(false);
+  });
 });

@@ -147,6 +147,31 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .input-shell svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; }
 .form-meta { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 13px; color: #6f887d; font: 400 11px/1.5 var(--mono); }
 .form-meta span::before { content: "·"; color: var(--accent); margin-right: 8px; }
+.query-warning, .turnstile-shell {
+  max-width: 900px;
+  margin-top: 14px;
+  padding: 13px 15px;
+  border: 1px solid rgba(255, 198, 92, .25);
+  background: rgba(255, 198, 92, .05);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.query-warning strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--warning);
+  font: 500 10px/1.4 var(--mono);
+  text-transform: uppercase;
+}
+.turnstile-shell {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-color: var(--line);
+  background: var(--surface);
+}
+.turnstile-shell > span { max-width: 300px; }
 .hero-route {
   position: absolute;
   right: 8px;

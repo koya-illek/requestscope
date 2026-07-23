@@ -8,6 +8,9 @@ ALLOWED_ORIGINS = "https://requestscope.pages.dev,http://localhost:8788,http://1
 REPORT_RETENTION_DAYS = "14"
 DAILY_SCAN_LIMIT = "15"
 
+[triggers]
+crons = ["17 3 * * *"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "requestscope"

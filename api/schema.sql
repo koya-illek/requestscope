@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS scans (
 );
 
 CREATE INDEX IF NOT EXISTS idx_scans_expires_at ON scans(expires_at);
-CREATE INDEX IF NOT EXISTS idx_scans_hostname_created ON scans(hostname, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS rate_limits (
   client_key TEXT NOT NULL,

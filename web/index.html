@@ -3,11 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Trace DNS, redirects, HTTP behaviour, caching, headers, and page dependencies from a Cloudflare edge observer.">
+  <meta name="description" content="Trace DNS, redirects, HTTP behaviour, caching, headers, and HTML resource references from a Cloudflare edge observer.">
   <meta name="theme-color" content="#08110f">
   <title>RequestScope — See the journey behind a URL</title>
   <link rel="stylesheet" href="./styles.css">
   <script src="./config.js"></script>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
   <script src="./app.js" defer></script>
 </head>
 <body>
@@ -27,7 +28,7 @@
     <section class="hero" id="home">
       <p class="eyebrow"><span>01</span> Request intelligence</p>
       <h1>See the journey<br><em>behind a URL.</em></h1>
-      <p class="hero-copy">Follow DNS resolution, redirects, response behaviour, cache policy, and page dependencies through one evidence-backed trace.</p>
+      <p class="hero-copy">Follow DNS resolution, redirects, response behaviour, cache policy, and HTML resource references through one evidence-backed trace.</p>
 
       <form class="trace-form" id="trace-form">
         <label for="url-input">Public URL</label>
@@ -43,6 +44,14 @@
           <span>Public HTTP/S targets only</span>
           <span>Reports expire after 14 days</span>
           <span>No login required</span>
+        </div>
+        <div class="query-warning hidden" id="query-warning">
+          <strong>Query parameters detected</strong>
+          <span>They are used for this request, but every value is redacted before the report is stored or shared.</span>
+        </div>
+        <div class="turnstile-shell hidden" id="turnstile-shell">
+          <div id="turnstile-widget"></div>
+          <span>Human verification protects the shared free-tier scanner.</span>
         </div>
       </form>
 
@@ -133,7 +142,7 @@
 
       <section class="panel dependencies-panel">
         <div class="panel-header">
-          <div><span class="section-number">04</span><h3>Page dependencies</h3></div>
+          <div><span class="section-number">04</span><h3>HTML resource references</h3></div>
           <div class="filter-set" role="group" aria-label="Dependency filters">
             <button class="filter active" data-filter="all" type="button">All</button>
             <button class="filter" data-filter="first-party" type="button">First-party</button>
