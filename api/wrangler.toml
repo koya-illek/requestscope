@@ -1,0 +1,18 @@
+name = "requestscope-api"
+main = "src/index.ts"
+compatibility_date = "2026-07-23"
+
+[vars]
+ENVIRONMENT = "production"
+ALLOWED_ORIGINS = "https://requestscope.pages.dev,http://localhost:8788,http://127.0.0.1:8788"
+REPORT_RETENTION_DAYS = "14"
+DAILY_SCAN_LIMIT = "15"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "requestscope"
+database_id = "582af539-f646-4aa8-b315-64c6425314ed"
+
+[observability]
+enabled = true
+head_sampling_rate = 1
