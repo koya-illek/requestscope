@@ -17,7 +17,7 @@ export default {
     }
 
     try {
-      if (url.pathname === "/" && request.method === "GET") {
+      if (url.pathname === "/" && (request.method === "GET" || request.method === "HEAD")) {
         return Response.redirect("https://requestscope.pages.dev/", 302);
       }
 
