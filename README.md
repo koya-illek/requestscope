@@ -45,9 +45,12 @@ Serve `web/` with any static web server and set its API endpoint in
 
 ```text
 GET  /api/health
+GET  /api
 POST /api/scans       {"url":"https://example.com"}
 GET  /api/scans/:id
 GET  /api/scans/:id/export
 ```
+
+The Worker root redirects human visitors to the Pages application.
 
 Reports expire after 14 days by default. No raw visitor IP address is stored.

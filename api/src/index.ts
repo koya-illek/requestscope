@@ -17,6 +17,25 @@ export default {
     }
 
     try {
+      if (url.pathname === "/" && request.method === "GET") {
+        return Response.redirect("https://requestscope.pages.dev/", 302);
+      }
+
+      if ((url.pathname === "/api" || url.pathname === "/api/") && request.method === "GET") {
+        return json({
+          service: "RequestScope API",
+          version: API_VERSION,
+          website: "https://requestscope.pages.dev/",
+          documentation: "https://requestscope.pages.dev/#methodology",
+          endpoints: {
+            health: "GET /api/health",
+            createScan: "POST /api/scans",
+            getScan: "GET /api/scans/:id",
+            exportScan: "GET /api/scans/:id/export",
+          },
+        }, 200, cors);
+      }
+
       if (url.pathname === "/api/health" && request.method === "GET") {
         return json({
           ok: true,
