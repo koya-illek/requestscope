@@ -7,7 +7,7 @@
   ],
   "scripts": {
     "dev": "npm --workspace api run dev",
-    "test": "npm --workspace api test",
+    "test": "node --test scripts/static.test.mjs && npm --workspace api test",
     "typecheck": "npm --workspace api run typecheck",
     "deploy:api": "npm --workspace api run deploy",
     "deploy:web": "wrangler pages deploy web --project-name requestscope"
