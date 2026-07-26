@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Trace DNS, redirects, HTTP behaviour, caching, headers, and HTML resource references from a Cloudflare edge observer.">
   <meta name="theme-color" content="#08110f">
+  <meta property="og:title" content="RequestScope — See the journey behind a URL">
+  <meta property="og:description" content="Follow DNS, redirects, response behaviour, caching, headers, and page dependencies through one evidence-backed trace.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://requestscope.illek.ie/">
+  <meta name="twitter:card" content="summary">
+  <link rel="canonical" href="https://requestscope.illek.ie/">
   <title>RequestScope — See the journey behind a URL</title>
   <link rel="stylesheet" href="./styles.css">
   <script src="./config.js"></script>
@@ -12,6 +18,7 @@
   <script src="./app.js" defer></script>
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to URL trace</a>
   <div class="grid-field" aria-hidden="true"></div>
   <header class="site-header">
     <a class="brand" href="./" aria-label="RequestScope home">
@@ -24,7 +31,7 @@
     </nav>
   </header>
 
-  <main>
+  <main id="main-content">
     <section class="hero" id="home">
       <p class="eyebrow"><span>01</span> Request intelligence</p>
       <h1>See the journey<br><em>behind a URL.</em></h1>
@@ -172,6 +179,8 @@
   <footer>
     <a class="brand small" href="./"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>RequestScope</span></a>
     <p>Independent edge request diagnostics.</p>
+    <p>© 2026 Illek. All rights reserved. Planning and diagnostic guidance only.</p>
+    <a class="text-button" href="https://tools.illek.ie/privacy.html">Privacy</a>
     <button class="text-button" id="footer-method-button" type="button">How measurements work</button>
   </footer>
 
