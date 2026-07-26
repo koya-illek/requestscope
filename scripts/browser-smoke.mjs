@@ -46,11 +46,10 @@ await command("Page.enable");
 await command("Runtime.enable");
 await command("Page.navigate", { url: targetUrl });
 await waitFor("document.readyState === 'complete'", 15000);
-const shell = await waitFor("document.querySelector('#turnstile-shell') && !document.querySelector('#turnstile-shell').classList.contains('hidden')", 10000);
-const verified = await waitFor("document.querySelector('#trace-button') && !document.querySelector('#trace-button').disabled", 20000);
+const ready = await waitFor("document.querySelector('#trace-button') && !document.querySelector('#trace-button').disabled", 10000);
 
 let completed = false;
-if (verified) {
+if (ready) {
   await evaluate(`(() => {
     const input = document.querySelector('#url-input');
     input.value = 'https://example.com/?token=browser-secret';
@@ -63,17 +62,14 @@ if (verified) {
 
 const result = await evaluate(`(() => ({
   title: document.title,
-  turnstileVisible: !document.querySelector('#turnstile-shell').classList.contains('hidden'),
-  turnstileFrames: document.querySelectorAll('iframe[src*="challenges.cloudflare.com"]').length,
-  turnstileApi: typeof window.turnstile,
-  turnstileMarkup: document.querySelector('#turnstile-widget').innerHTML.slice(0, 160),
-  verified: !document.querySelector('#trace-button').disabled,
+  ready: !document.querySelector('#trace-button').disabled,
+  challengeFrames: document.querySelectorAll('iframe[src*="challenges.cloudflare.com"]').length,
   completed: !document.querySelector('#report').classList.contains('hidden'),
   queryWarningVisible: !document.querySelector('#query-warning').classList.contains('hidden'),
   displayedUrl: document.querySelector('#report-url').textContent,
   error: document.querySelector('#error-message').textContent
 }))()`);
-console.log(JSON.stringify({ shell, verified, completed, ...result }, null, 2));
+console.log(JSON.stringify({ ready, completed, ...result }, null, 2));
 socket.close();
 
-if (!shell || !verified || !completed || result.displayedUrl.includes("browser-secret")) process.exitCode = 1;
+if (!ready || !completed || result.challengeFrames !== 0 || result.displayedUrl.includes("browser-secret")) process.exitCode = 1;

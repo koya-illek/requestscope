@@ -46,7 +46,7 @@ Serve `web/` with any static web server and set its API endpoint in
 ```text
 GET  /api/health
 GET  /api
-POST /api/scans       {"url":"https://example.com","turnstileToken":"..."}
+POST /api/scans       {"url":"https://example.com"}
 POST /api/scans/stream  NDJSON progress stream and final report
 GET  /api/scans/:id
 GET  /api/scans/:id/export

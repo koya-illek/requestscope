@@ -49,7 +49,7 @@ export default {
           service: "requestscope-api",
           version: API_VERSION,
           environment: env.ENVIRONMENT,
-          protection: env.TURNSTILE_SECRET ? "turnstile" : "rate-limit",
+          protection: "rate-limit",
           time: new Date().toISOString(),
         }, 200, cors);
       }
@@ -96,11 +96,9 @@ export default {
 
 interface ScanInput {
   url: string;
-  turnstileToken?: string;
 }
 
 class RateLimitError extends Error {}
-class TurnstileError extends Error {}
 
 async function readScanInput(request: Request): Promise<ScanInput> {
   const contentType = request.headers.get("content-type") || "";
@@ -144,7 +142,6 @@ async function readScanInput(request: Request): Promise<ScanInput> {
   if (typeof body.url !== "string") throw new InputError("A URL is required.");
   return {
     url: body.url,
-    turnstileToken: typeof body.turnstileToken === "string" ? body.turnstileToken : undefined,
   };
 }
 
@@ -165,7 +162,6 @@ async function createScan(
     return report;
   }
 
-  await verifyTurnstile(request, input.turnstileToken, env);
   await enforceRateLimit(request, env);
   const retention = clampInt(env.REPORT_RETENTION_DAYS, 14, 1, 90);
   const incomingCf = request.cf as Record<string, unknown> | undefined;
@@ -214,27 +210,6 @@ function streamScan(
       "X-Content-Type-Options": "nosniff",
     },
   });
-}
-
-export async function verifyTurnstile(request: Request, token: string | undefined, env: Env): Promise<void> {
-  if (!env.TURNSTILE_SECRET) return;
-  if (!token || token.length > 2048) throw new TurnstileError("Complete the human verification before tracing.");
-  const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      secret: env.TURNSTILE_SECRET,
-      response: token,
-      remoteip: request.headers.get("CF-Connecting-IP") || undefined,
-      idempotency_key: crypto.randomUUID(),
-    }),
-    signal: AbortSignal.timeout(5000),
-  });
-  const result = await response.json<{ success?: boolean; hostname?: string; action?: string }>();
-  const validHost = ["requestscope.pages.dev", "localhost", "127.0.0.1"].includes(result.hostname || "");
-  if (!response.ok || !result.success || !validHost || result.action !== "requestscope_scan") {
-    throw new TurnstileError("Human verification failed. Refresh the challenge and try again.");
-  }
 }
 
 async function recentScanCacheKey(requestUrl: string, targetUrl: string): Promise<Request> {
@@ -322,7 +297,6 @@ function securityHeaders(): Record<string, string> {
 function normalizeError(error: unknown): { status: number; message: string } {
   if (error instanceof InputError || error instanceof BlockedTargetError) return { status: error.status, message: error.message };
   if (error instanceof RateLimitError) return { status: 429, message: error.message };
-  if (error instanceof TurnstileError) return { status: 403, message: error.message };
   console.error("request_failed", error);
   return { status: 500, message: "The trace could not be completed. Please try again." };
 }

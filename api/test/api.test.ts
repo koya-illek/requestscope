@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import worker, { verifyTurnstile } from "../src/index";
+import worker from "../src/index";
 import type { Env } from "../src/types";
 
 const env = {
   ENVIRONMENT: "test",
-  ALLOWED_ORIGINS: "https://requestscope.pages.dev",
+  ALLOWED_ORIGINS: "https://requestscope.illek.ie,https://requestscope.pages.dev",
   REPORT_RETENTION_DAYS: "14",
   DAILY_SCAN_LIMIT: "15",
 } as Env;
@@ -72,30 +72,13 @@ describe("API routing and input boundary", () => {
   });
 });
 
-describe("Turnstile verification", () => {
-  it("accepts only the configured hostname and action", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
-      success: true,
-      hostname: "requestscope.pages.dev",
-      action: "requestscope_scan",
-    })));
-    await expect(verifyTurnstile(
-      new Request("https://api.example/api/scans"),
-      "valid-token",
-      { ...env, TURNSTILE_SECRET: "secret" },
-    )).resolves.toBeUndefined();
-  });
-
-  it("rejects a token minted for a different action", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
-      success: true,
-      hostname: "requestscope.pages.dev",
-      action: "other_action",
-    })));
-    await expect(verifyTurnstile(
-      new Request("https://api.example/api/scans"),
-      "wrong-action-token",
-      { ...env, TURNSTILE_SECRET: "secret" },
-    )).rejects.toThrow(/verification failed/i);
+describe("rate-limited public access", () => {
+  it("allows the production custom origin", async () => {
+    const response = await worker.fetch(new Request("https://api.example/api/health", {
+      headers: { Origin: "https://requestscope.illek.ie" },
+    }), env, ctx);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBe("https://requestscope.illek.ie");
+    await expect(response.json()).resolves.toMatchObject({ protection: "rate-limit" });
   });
 });

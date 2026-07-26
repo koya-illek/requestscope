@@ -2,10 +2,9 @@
   "use strict";
 
   const API_BASE = (window.REQUESTSCOPE_CONFIG?.API_BASE || "").replace(/\/$/, "");
-  const TURNSTILE_SITE_KEY = window.REQUESTSCOPE_CONFIG?.TURNSTILE_SITE_KEY || "";
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
-  const state = { report: null, progressStep: 0, turnstileToken: "", turnstileWidget: null };
+  const state = { report: null, progressStep: 0 };
 
   const form = $("#trace-form");
   const input = $("#url-input");
@@ -34,8 +33,6 @@
     $$(".filter").forEach((item) => item.classList.toggle("active", item === button));
     renderDependencies(button.dataset.filter);
   }));
-  initializeTurnstile();
-
   async function runTrace(url) {
     if (!url.trim()) return;
     beginProgress();
@@ -46,7 +43,7 @@
       const response = await fetch(`${API_BASE}/api/scans/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim(), turnstileToken: state.turnstileToken })
+        body: JSON.stringify({ url: url.trim() })
       });
       if (!response.ok || !response.body) throw new Error(`Trace failed with HTTP ${response.status}`);
       const payload = await readTraceStream(response);
@@ -57,7 +54,6 @@
       showError(error.message || "The trace could not be completed.");
     } finally {
       traceButton.disabled = false;
-      resetTurnstile();
     }
   }
 
@@ -304,51 +300,6 @@
       hasQuery = false;
     }
     $("#query-warning").classList.toggle("hidden", !hasQuery);
-  }
-
-  function initializeTurnstile() {
-    if (!TURNSTILE_SITE_KEY) return;
-    traceButton.disabled = true;
-    $("#turnstile-shell").classList.remove("hidden");
-    const render = () => {
-      if (!window.turnstile || state.turnstileWidget !== null) return;
-      state.turnstileWidget = window.turnstile.render("#turnstile-widget", {
-        sitekey: TURNSTILE_SITE_KEY,
-        theme: "dark",
-        size: "flexible",
-        appearance: "always",
-        action: "requestscope_scan",
-        callback: (token) => {
-          state.turnstileToken = token;
-          traceButton.disabled = false;
-        },
-        "expired-callback": () => {
-          state.turnstileToken = "";
-          traceButton.disabled = true;
-        },
-        "error-callback": () => {
-          state.turnstileToken = "";
-          traceButton.disabled = true;
-          showError("Human verification could not complete. Check browser privacy controls, then refresh the page.");
-        }
-      });
-    };
-    const timer = setInterval(() => {
-      render();
-      if (state.turnstileWidget !== null) clearInterval(timer);
-    }, 100);
-    setTimeout(() => {
-      clearInterval(timer);
-      if (state.turnstileWidget === null) {
-        showError("Human verification could not load. Check content blockers or network filtering, then refresh the page.");
-      }
-    }, 10000);
-  }
-
-  function resetTurnstile() {
-    state.turnstileToken = "";
-    if (TURNSTILE_SITE_KEY) traceButton.disabled = true;
-    if (window.turnstile && state.turnstileWidget !== null) window.turnstile.reset(state.turnstileWidget);
   }
 
   const initialId = location.hash.slice(1);

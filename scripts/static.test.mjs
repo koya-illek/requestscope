@@ -15,6 +15,9 @@ test("public shell exposes metadata, keyboard navigation and privacy", async () 
   assert.match(html, /Skip to URL trace/);
   assert.ok(html.includes("tools.illek.ie/privacy"));
   assert.ok(headers.includes("static.cloudflareinsights.com"));
+  assert.ok(!html.includes("challenges.cloudflare.com"));
+  assert.ok(!html.includes("turnstile-widget"));
+  assert.ok(!headers.includes("challenges.cloudflare.com"));
   assert.match(robots, /Sitemap:/);
   assert.ok(sitemap.includes("requestscope.illek.ie"));
 });
