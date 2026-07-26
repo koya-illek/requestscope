@@ -13,7 +13,7 @@ test("public shell exposes metadata, keyboard navigation and privacy", async () 
   ]);
   assert.match(html, /rel="canonical"/);
   assert.match(html, /Skip to URL trace/);
-  assert.ok(html.includes("tools.illek.ie/privacy.html"));
+  assert.ok(html.includes("tools.illek.ie/privacy"));
   assert.ok(headers.includes("static.cloudflareinsights.com"));
   assert.match(robots, /Sitemap:/);
   assert.ok(sitemap.includes("requestscope.illek.ie"));
