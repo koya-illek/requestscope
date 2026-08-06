@@ -68,16 +68,60 @@ export type DomainCategory =
   | "communication"
   | "monitoring"
   | "security"
+  | "marketing"
+  | "social"
+  | "testing"
+  | "video"
+  | "auth"
+  | "consent"
+  | "hosting"
   | "unknown";
 
 export interface MappedDomain {
   domain: string;
   category: DomainCategory;
+  serviceName: string | null;
   source: "csp" | "js-bundle" | "cert-transparency" | "multiple";
   piiRisk: boolean;
   postAuthOnly: boolean;
   occurrences: number;
   evidence: string[];
+}
+
+export interface SdkDetection {
+  name: string;
+  domain: string;
+  category: DomainCategory;
+  match: string;
+}
+
+export interface SslDetail {
+  protocol: string | null;
+  cipher: string | null;
+  issuer: string | null;
+  subject: string | null;
+  validFrom: string | null;
+  validTo: string | null;
+  daysUntilExpiry: number | null;
+  authorityKeyIdentifier: string | null;
+}
+
+export interface SubdomainTakeoverCheck {
+  subdomain: string;
+  cname: string | null;
+  resolvable: boolean;
+  httpStatus: number | null;
+  vulnerable: boolean;
+  evidence: string;
+  // Additional fields used by takeover probes
+  service?: string;
+  httpError?: string | null;
+  evidenceKind?: "derived_finding";
+}
+
+export interface ConsentPlatform {
+  name: string;
+  detectedVia: string;
 }
 
 export interface CspAnalysis {
@@ -109,6 +153,7 @@ export interface DependencyMap {
     certTransparency: CertTransparencyAnalysis;
   };
   domains: MappedDomain[];
+  sdks: SdkDetection[];
   summary: {
     totalDomains: number;
     byCategory: Record<string, number>;
@@ -161,6 +206,17 @@ export interface ScanReport {
     positive: number;
     info: number;
   };
+}
+
+export interface SslDetail {
+  protocol: string | null;
+  cipher: string | null;
+  issuer: string | null;
+  subject: string | null;
+  validFrom: string | null;
+  validTo: string | null;
+  daysUntilExpiry: number | null;
+  authorityKeyIdentifier: string | null;
 }
 
 export interface Env {

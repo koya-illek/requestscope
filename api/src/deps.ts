@@ -1,11 +1,18 @@
 import { getDomain } from "tldts";
+import {
+  classifyHostname,
+  detectSdks as detectSdksFromClassifier,
+  assessPiiRisk as classifierPiiRisk,
+} from "./classifier";
 import type {
   CertTransparencyAnalysis,
   CspAnalysis,
   DependencyMap,
-  DomainCategory,
   JsBundleAnalysis,
   MappedDomain,
+  SdkDetection,
+  SslDetail,
+  SubdomainTakeoverCheck,
 } from "./types";
 
 const MAX_JS_BUNDLES = 15;
@@ -13,22 +20,8 @@ const MAX_BUNDLE_BYTES = 512 * 1024;
 const MAX_CT_RESULTS = 100;
 const FETCH_TIMEOUT = 8_000;
 const CT_TIMEOUT = 12_000;
-
-const DOMAIN_PATTERNS: Array<[RegExp, DomainCategory]> = [
-  [/google-analytics\.com|googletagmanager\.com|hotjar\.com|mixpanel\.com|amplitude\.com|segment\.(?:io|com)|posthog\.com|plausible\.io|clarity\.ms|matomo\./i, "analytics"],
-  [/doubleclick\.net|googlesyndication\.com|googleadservices\.com|facebook\.(?:net|com)|fbcdn\.net|amazon-adsystem\.com|criteo\.(?:com|net)|taboola\.com|outbrain\.com|adservice\.google\./i, "advertising"],
-  [/cloudflare(?:insights|cdn)?\.com|jsdelivr\.net|unpkg\.com|cdnjs\.cloudflare\.com|bootstrapcdn\.com|googleapis\.com|gstatic\.com|gravatar\.com|fastly\./i, "cdn"],
-  [/stripe\.(?:com|network)|paypal\.com|squareup\.com|adyen\.com|checkout\.com|revenuewire\./i, "payment"],
-  [/pusher\.(?:com|app)|pusherapp\.com|socket\.io|ably\.(?:io|com)|pubnub\.com|firebaseio\.com|deepstream\.io/i, "communication"],
-  [/sentry\.(?:io|cdn\.com)|datadoghq\.com|rollbar\.com|logflare\.app|bugsnag\.com/i, "monitoring"],
-  [/recaptcha\.net|hcaptcha\.com|challenges\.cloudflare\.com|turnstile\.site/i, "security"],
-];
-
-const PII_RISK_PATTERNS = [
-  /google-analytics|googletagmanager|doubleclick|facebook|hotjar|mixpanel|segment|amplitude|posthog/i,
-  /stripe|paypal|adyen|squareup/i,
-  /pusher|socket\.io|ably|pubnub|firebaseio/i,
-];
+const TAKEOVER_TIMEOUT = 5_000;
+const MAX_TAKEOVER_PROBES = 20;
 
 const URL_PATTERN = /(?:https?:)?\/\/([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)(?::\d+)?(?:\/[^\s"'<>`)]*)?/gi;
 const WS_PATTERN = /wss?:\/\/([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)(?::\d+)?(?:\/[^\s"'<>`)]]*)?/gi;
@@ -52,7 +45,7 @@ export async function mapDependencies(
   const csp = analyseCsp(responseHeaders["content-security-policy"]);
 
   onProgress({ stage: "deps-js", message: "Scanning JavaScript bundles" });
-  const jsBundles = await scrapeJsBundles(scriptDeps);
+  const { analysis: jsBundles, rawJsText } = await scrapeJsBundles(scriptDeps);
 
   onProgress({ stage: "deps-ct", message: "Querying Certificate Transparency logs" });
   const certT = await queryCertTransparency(hostname);
@@ -73,12 +66,17 @@ export async function mapDependencies(
 
   const domains = [...domainMap.values()];
   for (const d of domains) {
-    d.category = classifyDomain(d.domain);
-    d.piiRisk = assessPiiRisk(d.domain, d.category);
+    const match = classifyHostname(d.domain);
+    d.category = match.category;
+    d.serviceName = match.name;
+    d.piiRisk = classifierPiiRisk(d.domain, d.category);
     d.postAuthOnly = !csp.domains.includes(d.domain) &&
       !scriptDeps.some((s) => s.host === d.domain) &&
       d.source !== "cert-transparency";
   }
+
+  // Detect SDKs from concatenated JS bundle text
+  const sdks = detectSdksFromClassifier(rawJsText);
 
   const byCategory = domains.reduce((acc, d) => {
     acc[d.category] = (acc[d.category] || 0) + 1;
@@ -92,6 +90,7 @@ export async function mapDependencies(
     durationMs: Math.round(performance.now() - started),
     sources: { csp, jsBundles, certTransparency: certT },
     domains: domains.sort((a, b) => a.domain.localeCompare(b.domain)),
+    sdks,
     summary: {
       totalDomains: domains.length,
       byCategory,
@@ -158,13 +157,14 @@ function extractHostFromCspSource(source: string): string | null {
   return host;
 }
 
-async function scrapeJsBundles(scriptDeps: Array<{ url: string; host: string }>): Promise<JsBundleAnalysis> {
+async function scrapeJsBundles(scriptDeps: Array<{ url: string; host: string }>): Promise<{ analysis: JsBundleAnalysis; rawJsText: string }> {
   const bundles = scriptDeps
     .filter((d) => d.url.match(/\.m?js(?:\?|$)/i) || d.url.match(/\/js\//i))
     .slice(0, MAX_JS_BUNDLES);
 
   const domains = new Set<string>();
   const patterns: Array<{ domain: string; pattern: string; context: string }> = [];
+  const allText: string[] = [];
 
   for (const bundle of bundles) {
     try {
@@ -208,6 +208,7 @@ async function scrapeJsBundles(scriptDeps: Array<{ url: string; host: string }>)
         offset += chunk.byteLength;
       }
       const text = new TextDecoder("utf-8", { fatal: false }).decode(merged);
+      allText.push(text);
 
       const found = extractDomainsFromJs(text);
       for (const { domain, pattern, context } of found) {
@@ -219,12 +220,14 @@ async function scrapeJsBundles(scriptDeps: Array<{ url: string; host: string }>)
     }
   }
 
-  return {
+  const analysis: JsBundleAnalysis = {
     bundlesFetched: bundles.length,
     totalBytes: 0,
     domains: [...domains].sort(),
     patterns,
   };
+
+  return { analysis, rawJsText: allText.join("\n") };
 }
 
 function extractDomainsFromJs(text: string): Array<{ domain: string; pattern: string; context: string }> {
@@ -325,6 +328,7 @@ function addDomain(
     map.set(domain, {
       domain,
       category: "unknown",
+      serviceName: null,
       source,
       piiRisk: false,
       postAuthOnly: false,
@@ -334,16 +338,4 @@ function addDomain(
   }
 }
 
-function classifyDomain(domain: string): DomainCategory {
-  for (const [pattern, category] of DOMAIN_PATTERNS) {
-    if (pattern.test(domain)) return category;
-  }
-  return "unknown";
-}
 
-function assessPiiRisk(domain: string, _category: DomainCategory): boolean {
-  for (const pattern of PII_RISK_PATTERNS) {
-    if (pattern.test(domain)) return true;
-  }
-  return false;
-}
