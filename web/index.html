@@ -51,6 +51,13 @@
           <span>Reports expire after 14 days</span>
           <span>No login required</span>
         </div>
+        <label class="deps-toggle">
+          <input type="checkbox" id="map-deps" name="mapDependencies">
+          <span class="deps-toggle-text">
+            <strong>Map external dependencies</strong>
+            <small>CSP analysis · JS bundle scan · Certificate Transparency — adds ~10s</small>
+          </span>
+        </label>
         <div class="query-warning hidden" id="query-warning">
           <strong>Query parameters detected</strong>
           <span>They are used for this request, but every value is redacted before the report is stored or shared.</span>
@@ -153,6 +160,29 @@
         </div>
         <div class="dependency-summary" id="dependency-summary"></div>
         <div class="dependency-list" id="dependencies"></div>
+      </section>
+
+      <section class="panel dep-map-panel hidden" id="dep-map-panel">
+        <div class="panel-header">
+          <div><span class="section-number">05</span><h3>External dependency map</h3></div>
+          <span class="evidence-badge">UNAUTHENTICATED SURFACE</span>
+        </div>
+        <div class="dep-map-summary" id="dep-map-summary"></div>
+        <div class="dep-map-source-grid">
+          <div class="dep-map-source">
+            <h4>CSP directives</h4>
+            <div id="dep-csp"></div>
+          </div>
+          <div class="dep-map-source">
+            <h4>JS bundle findings</h4>
+            <div id="dep-js"></div>
+          </div>
+          <div class="dep-map-source">
+            <h4>Certificate Transparency</h4>
+            <div id="dep-ct"></div>
+          </div>
+        </div>
+        <div class="dep-map-domains" id="dep-map-domains"></div>
       </section>
 
       <div class="observation-note">

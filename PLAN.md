@@ -13,7 +13,6 @@
 - Shareable 14-day reports
 - JSON export
 - Anonymous abuse controls
-- Server-validated Turnstile
 - Privacy redaction for all URL query values
 - Responsive visual interface
 

@@ -19,7 +19,6 @@ RequestScope applies layered controls:
 - no cookies forwarded between hops
 - no user-controlled request headers
 - daily client rate limits without raw IP retention
-- server-validated Cloudflare Turnstile tokens
 - redaction of every URL query value before persistence or sharing
 - restrictive CORS and security headers
 

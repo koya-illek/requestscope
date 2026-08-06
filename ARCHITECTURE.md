@@ -42,10 +42,11 @@ The production configuration deliberately stays below the Workers Free limits:
 - 256 KiB maximum body inspection
 - 100 dependency records maximum
 - two foreground D1 statements for a new scan
-- 15 anonymous scans per client fingerprint per UTC day
+- 15 anonymous scan requests per client fingerprint per UTC day, including
+  requests served from the recent-result cache
 - 14-day report retention
-- five-minute recent-scan caching to avoid duplicate work
-- Turnstile validation on new scans
+- five-minute recent-scan caching to avoid duplicate upstream work after the
+  request limit has been checked
 - one daily Cron Trigger for deterministic expiry cleanup
 - no Pages Functions, Durable Objects, Queues, R2, or Browser Rendering in v1
 
@@ -67,8 +68,7 @@ indexing and lifecycle management:
 - report JSON
 
 Rate-limit counters store a one-way daily client fingerprint, never a raw IP.
-Turnstile tokens are validated server-side and never stored. Expired reports and
-old rate-limit rows are removed daily by a Cron Trigger.
+Expired reports and old rate-limit rows are removed daily by a Cron Trigger.
 
 ## Failure model
 

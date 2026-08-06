@@ -9,6 +9,7 @@
   const form = $("#trace-form");
   const input = $("#url-input");
   const traceButton = $("#trace-button");
+  const mapDepsCheckbox = $("#map-deps");
   const progressPanel = $("#progress-panel");
   const errorPanel = $("#error-panel");
   const reportPanel = $("#report");
@@ -38,12 +39,13 @@
     beginProgress();
     errorPanel.classList.add("hidden");
     reportPanel.classList.add("hidden");
+    $("#dep-map-panel").classList.add("hidden");
     traceButton.disabled = true;
     try {
       const response = await fetch(`${API_BASE}/api/scans/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim() })
+        body: JSON.stringify({ url: url.trim(), mapDependencies: mapDepsCheckbox.checked })
       });
       if (!response.ok || !response.body) throw new Error(`Trace failed with HTTP ${response.status}`);
       const payload = await readTraceStream(response);
@@ -73,6 +75,14 @@
 
   function beginProgress(title = "Tracing request path") {
     state.progressStep = 0;
+    const stepsEl = $("#progress-steps");
+    if (mapDepsCheckbox.checked && stepsEl.children.length === 5) {
+      const li = document.createElement("li");
+      li.textContent = "Map dependencies";
+      stepsEl.appendChild(li);
+    } else if (!mapDepsCheckbox.checked && stepsEl.children.length === 6) {
+      stepsEl.lastChild.remove();
+    }
     $("#progress-title").textContent = title;
     progressPanel.classList.remove("hidden");
     $("#progress-bar").style.width = "8%";
@@ -96,7 +106,7 @@
   }
 
   function finishProgress() {
-    state.progressStep = 4;
+    state.progressStep = mapDepsCheckbox.checked ? 5 : 4;
     updateProgressSteps();
     $("#progress-bar").style.width = "100%";
     setTimeout(() => progressPanel.classList.add("hidden"), 250);
@@ -126,6 +136,7 @@
     renderDependencySummary(report.dependencies);
     renderDependencies("all");
     $$(".filter").forEach((item) => item.classList.toggle("active", item.dataset.filter === "all"));
+    renderDepMap(report.dependencyMap);
     reportPanel.classList.remove("hidden");
     if (updateLocation) history.pushState({ reportId: report.id }, "", `#${report.id}`);
     document.title = `${report.hostname} — RequestScope`;
@@ -231,6 +242,7 @@
     state.report = null;
     reportPanel.classList.add("hidden");
     errorPanel.classList.add("hidden");
+    $("#dep-map-panel").classList.add("hidden");
     history.pushState({}, "", location.pathname);
     document.title = "RequestScope — See the journey behind a URL";
     input.value = "";
@@ -281,10 +293,16 @@
   }
 
   function applyProgress(event) {
-    const stageMap = { accepted: 0, validated: 0, dns: 1, hop: 2, response: 3, complete: 4 };
-    state.progressStep = stageMap[event.stage] ?? state.progressStep;
+    const stageMap = { accepted: 0, validated: 0, dns: 1, hop: 2, response: 3, complete: mapDepsCheckbox.checked ? 5 : 4 };
+    // Deps stages map to step 4 ("Map dependencies")
+    if (event.stage.startsWith("deps-")) {
+      state.progressStep = 4;
+    } else {
+      state.progressStep = stageMap[event.stage] ?? state.progressStep;
+    }
     $("#progress-title").textContent = event.message || "Tracing request path";
-    $("#progress-bar").style.width = `${18 + state.progressStep * 20}%`;
+    const stepCount = mapDepsCheckbox.checked ? 5 : 4;
+    $("#progress-bar").style.width = `${18 + (state.progressStep / stepCount) * 75}%`;
     updateProgressSteps();
   }
 
@@ -300,6 +318,67 @@
       hasQuery = false;
     }
     $("#query-warning").classList.toggle("hidden", !hasQuery);
+  }
+
+  function renderDepMap(depMap) {
+    const panel = $("#dep-map-panel");
+    if (!depMap) {
+      panel.classList.add("hidden");
+      return;
+    }
+    panel.classList.remove("hidden");
+
+    const cats = depMap.summary.byCategory || {};
+    $("#dep-map-summary").innerHTML = [
+      ["Total domains", depMap.summary.totalDomains, ""],
+      ["PII risk", depMap.summary.piiRisk, depMap.summary.piiRisk > 0 ? "warn" : "good"],
+      ["Post-auth only", depMap.summary.postAuthOnly, ""],
+      ["Analytics", cats.analytics || 0, ""],
+      ["Advertising", cats.advertising || 0, ""],
+      ["Payment", cats.payment || 0, ""],
+      ["Communication", cats.communication || 0, ""],
+    ].map(([label, value, cls]) =>
+      `<span><strong class="${cls}">${escapeHtml(String(value))}</strong> ${escapeHtml(label)}</span>`
+    ).join("");
+
+    // CSP
+    const csp = depMap.sources.csp;
+    $("#dep-csp").innerHTML = !csp.present
+      ? `<p class="dns-empty">No Content-Security-Policy header observed.</p>`
+      : Object.entries(csp.directives).map(([name, sources]) =>
+          `<div class="dep-directive"><span class="dep-d-name">${escapeHtml(name)}</span><code>${escapeHtml(sources.join(" "))}</code></div>`
+        ).join("");
+
+    // JS bundles
+    const js = depMap.sources.jsBundles;
+    $("#dep-js").innerHTML = js.bundlesFetched === 0
+      ? `<p class="dns-empty">No external JavaScript bundles found.</p>`
+      : `<p class="dep-meta">Scanned <strong>${js.bundlesFetched}</strong> bundle${js.bundlesFetched === 1 ? "" : "s"}, found <strong>${js.domains.length}</strong> domain${js.domains.length === 1 ? "" : "s"}.</p>` +
+        (js.domains.length ? `<div class="dep-tag-list">${js.domains.map(d => `<span class="dep-tag">${escapeHtml(d)}</span>`).join("")}</div>` : "");
+
+    // Cert Transparency
+    const ct = depMap.sources.certTransparency;
+    $("#dep-ct").innerHTML = ct.error
+      ? `<p class="dns-empty">Error: ${escapeHtml(ct.error)}</p>`
+      : ct.subdomains.length === 0
+        ? `<p class="dns-empty">No subdomains found.</p>`
+        : `<p class="dep-meta">Found <strong>${ct.total}</strong> subdomain${ct.total === 1 ? "" : "s"}.</p>` +
+          `<div class="dep-tag-list">${ct.subdomains.slice(0, 30).map(s => `<span class="dep-tag">${escapeHtml(s)}</span>`).join("")}${ct.total > 30 ? `<span class="dep-tag dep-tag-more">+${ct.total - 30} more</span>` : ""}</div>`;
+
+    // Domains table
+    const domains = depMap.domains;
+    $("#dep-map-domains").innerHTML = domains.length ? domains.map(d => {
+      const flags = [
+        d.piiRisk ? `<span class="dep-flag dep-flag-pii" title="Likely transmits PII">PII</span>` : "",
+        d.postAuthOnly ? `<span class="dep-flag dep-flag-auth" title="Only visible after authentication">POST-AUTH</span>` : "",
+      ].filter(Boolean).join("");
+      return `<div class="dep-domain">
+        <span class="dep-cat dep-cat-${escapeHtml(d.category)}">${escapeHtml(d.category)}</span>
+        <span class="dep-host" title="${escapeAttr(d.evidence.join("; "))}">${escapeHtml(d.domain)}</span>
+        <span class="dep-src">${escapeHtml(d.source)}</span>
+        ${flags}
+      </div>`;
+    }).join("") : `<p class="dns-empty">No external domains discovered.</p>`;
   }
 
   const initialId = location.hash.slice(1);

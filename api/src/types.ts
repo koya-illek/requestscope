@@ -59,6 +59,64 @@ export interface Finding {
   evidenceKind: "derived_finding";
 }
 
+export type DomainCategory =
+  | "functional"
+  | "analytics"
+  | "advertising"
+  | "cdn"
+  | "payment"
+  | "communication"
+  | "monitoring"
+  | "security"
+  | "unknown";
+
+export interface MappedDomain {
+  domain: string;
+  category: DomainCategory;
+  source: "csp" | "js-bundle" | "cert-transparency" | "multiple";
+  piiRisk: boolean;
+  postAuthOnly: boolean;
+  occurrences: number;
+  evidence: string[];
+}
+
+export interface CspAnalysis {
+  present: boolean;
+  raw?: string;
+  directives: Record<string, string[]>;
+  domains: string[];
+}
+
+export interface JsBundleAnalysis {
+  bundlesFetched: number;
+  totalBytes: number;
+  domains: string[];
+  patterns: Array<{ domain: string; pattern: string; context: string }>;
+}
+
+export interface CertTransparencyAnalysis {
+  subdomains: string[];
+  total: number;
+  error?: string;
+}
+
+export interface DependencyMap {
+  createdAt: string;
+  durationMs: number;
+  sources: {
+    csp: CspAnalysis;
+    jsBundles: JsBundleAnalysis;
+    certTransparency: CertTransparencyAnalysis;
+  };
+  domains: MappedDomain[];
+  summary: {
+    totalDomains: number;
+    byCategory: Record<string, number>;
+    piiRisk: number;
+    postAuthOnly: number;
+  };
+}
+
 export interface ScanReport {
   schemaVersion: 1;
   id: string;
@@ -95,6 +153,7 @@ export interface ScanReport {
     uniqueHosts: string[];
     items: Dependency[];
   };
+  dependencyMap?: DependencyMap;
   findings: Finding[];
   summary: {
     critical: number;

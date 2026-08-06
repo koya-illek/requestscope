@@ -46,6 +46,36 @@ describe("API routing and input boundary", () => {
     expect(await response.json()).toEqual({ error: "Request body is too large." });
   });
 
+  it("checks the client limit before serving a cached scan", async () => {
+    const cachedReport = { id: "cached-report" };
+    let rateLimitChecks = 0;
+    vi.stubGlobal("caches", {
+      open: vi.fn(async () => ({
+        match: vi.fn(async () => new Response(JSON.stringify(cachedReport))),
+      })),
+    });
+    const db = {
+      prepare: vi.fn(() => ({
+        bind: vi.fn(() => ({
+          first: vi.fn(async () => {
+            rateLimitChecks += 1;
+            return { request_count: 1 };
+          }),
+        })),
+      })),
+    } as unknown as D1Database;
+
+    const response = await worker.fetch(new Request("https://api.example/api/scans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com" }),
+    }), { ...env, DB: db }, ctx);
+
+    expect(response.status).toBe(201);
+    expect(rateLimitChecks).toBe(1);
+    expect(await response.json()).toEqual(cachedReport);
+  });
+
   it("rejects disallowed browser origins", async () => {
     const response = await worker.fetch(new Request("https://api.example/api/scans", {
       method: "POST",

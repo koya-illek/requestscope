@@ -1,4 +1,5 @@
 import { inspectDns, queryDns } from "./dns";
+import { mapDependencies } from "./deps";
 import { buildFindings } from "./findings";
 import {
   BlockedTargetError,
@@ -42,7 +43,7 @@ const STORED_HEADERS = new Set([
 ]);
 
 export interface AnalyzerProgress {
-  stage: "validated" | "dns" | "hop" | "response" | "complete";
+  stage: "validated" | "dns" | "hop" | "response" | "deps-csp" | "deps-js" | "deps-ct" | "deps-complete" | "complete";
   message: string;
   hop?: number;
   status?: number;
@@ -53,6 +54,7 @@ export async function analyzeUrl(
   retentionDays: number,
   observer: { colo?: string; country?: string } = {},
   onProgress: (event: AnalyzerProgress) => void = () => {},
+  options: { mapDependencies?: boolean } = {},
 ): Promise<ScanReport> {
   const started = performance.now();
   const initial = normalizeUrl(rawUrl);
@@ -209,6 +211,17 @@ export async function analyzeUrl(
       items: dependencies,
     },
   };
+  let dependencyMap: ScanReport["dependencyMap"] = undefined;
+  if (options.mapDependencies && finalResponse) {
+    dependencyMap = await mapDependencies(
+      initial.hostname,
+      current,
+      hops.at(-1)?.responseHeaders || {},
+      dependencies.filter((d) => d.type === "script").map((d) => ({ url: d.url, host: d.host })),
+      (event) => onProgress({ stage: event.stage as AnalyzerProgress["stage"], message: event.message }),
+    );
+  }
+
   const findings = buildFindings(base);
   const summary = {
     critical: findings.filter((item) => item.severity === "critical").length,
@@ -217,7 +230,7 @@ export async function analyzeUrl(
     info: findings.filter((item) => item.severity === "info").length,
   };
   onProgress({ stage: "complete", message: "Report complete" });
-  return { ...base, findings, summary };
+  return { ...base, dependencyMap, findings, summary };
 }
 
 async function assertTargetPublic(hostname: string): Promise<void> {

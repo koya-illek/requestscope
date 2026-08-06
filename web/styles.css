@@ -327,6 +327,74 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .observation-note { display: grid; grid-template-columns: 190px 1fr; gap: 20px; margin-top: 20px; padding: 20px; border-left: 2px solid var(--accent); background: rgba(89, 240, 167, .05); }
 .observation-note strong { font: 500 11px/1.5 var(--mono); color: var(--accent); text-transform: uppercase; }
 .observation-note p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+/* Dependency map */
+.deps-toggle {
+  display: flex; align-items: flex-start; gap: 12px;
+  margin-top: 16px; cursor: pointer; user-select: none;
+}
+.deps-toggle input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+.deps-toggle-text strong { display: block; font-size: 13px; color: var(--text); }
+.deps-toggle-text small { display: block; margin-top: 2px; color: var(--muted); font: 400 10px/1.5 var(--mono); }
+
+.dep-map-panel { margin-top: 20px; }
+.dep-map-summary {
+  display: flex; flex-wrap: wrap; gap: 24px;
+  padding: 18px 20px; border-bottom: 1px solid var(--line);
+  color: var(--muted); font: 400 11px/1 var(--mono);
+}
+.dep-map-summary strong { font-size: 18px; margin-right: 4px; }
+.dep-map-summary strong.warn { color: var(--warning); }
+.dep-map-summary strong.good { color: var(--accent); }
+
+.dep-map-source-grid {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0;
+  border-bottom: 1px solid var(--line);
+}
+.dep-map-source { padding: 18px 20px; border-right: 1px solid var(--line); }
+.dep-map-source:last-child { border-right: 0; }
+.dep-map-source h4 { margin: 0 0 10px; font: 500 11px/1 var(--mono); color: var(--accent); text-transform: uppercase; letter-spacing: .1em; }
+.dep-directive { margin-bottom: 8px; }
+.dep-d-name { display: inline-block; min-width: 80px; color: var(--accent); font: 500 10px/1.4 var(--mono); }
+.dep-directive code { color: var(--muted); font: 400 10px/1.4 var(--mono); overflow-wrap: anywhere; }
+.dep-meta { color: var(--muted); font: 400 11px/1.5 var(--mono); margin: 0 0 8px; }
+.dep-tag-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.dep-tag { padding: 3px 7px; border: 1px solid var(--line-bright); color: var(--muted); font: 400 9px/1.3 var(--mono); }
+.dep-tag-more { color: var(--accent); border-color: var(--accent); }
+
+.dep-map-domains { max-height: 500px; overflow: auto; }
+.dep-domain {
+  display: grid; grid-template-columns: 110px minmax(0, 1fr) 120px auto;
+  gap: 12px; align-items: center;
+  padding: 10px 20px; border-bottom: 1px solid var(--line);
+  font: 400 10px/1.4 var(--mono);
+}
+.dep-domain:last-child { border-bottom: 0; }
+.dep-cat {
+  padding: 3px 7px; text-align: center;
+  text-transform: uppercase; letter-spacing: .05em;
+  font-size: 9px;
+}
+.dep-cat-analytics, .dep-cat-advertising { color: var(--warning); }
+.dep-cat-payment, .dep-cat-communication { color: var(--info); }
+.dep-cat-cdn, .dep-cat-security, .dep-cat-monitoring { color: var(--accent); }
+.dep-cat-unknown, .dep-cat-functional { color: var(--muted); }
+.dep-host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.dep-src { color: #60776c; text-align: right; }
+.dep-flag {
+  padding: 2px 6px; font-size: 8px; font-weight: 700; letter-spacing: .05em;
+}
+.dep-flag-pii { background: rgba(255, 198, 92, .15); color: var(--warning); }
+.dep-flag-auth { background: rgba(126, 188, 255, .15); color: var(--info); }
+
+@media (max-width: 850px) {
+  .dep-map-source-grid { grid-template-columns: 1fr; }
+  .dep-map-source { border-right: 0; border-bottom: 1px solid var(--line); }
+}
+@media (max-width: 620px) {
+  .dep-domain { grid-template-columns: 90px minmax(0, 1fr); }
+  .dep-src, .dep-flag { grid-column: 2; justify-self: end; }
+}
 .principles { padding: 90px 0 110px; border-top: 1px solid var(--line); }
 .principle-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); }
 .principle-grid article { min-height: 240px; padding: 32px; background: var(--bg); }

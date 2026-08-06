@@ -96,6 +96,7 @@ export default {
 
 interface ScanInput {
   url: string;
+  mapDependencies?: boolean;
 }
 
 class RateLimitError extends Error {}
@@ -140,8 +141,12 @@ async function readScanInput(request: Request): Promise<ScanInput> {
   if (!parsed || typeof parsed !== "object") throw new InputError("JSON request body must be an object.");
   const body = parsed as Record<string, unknown>;
   if (typeof body.url !== "string") throw new InputError("A URL is required.");
+  if (body.mapDependencies !== undefined && typeof body.mapDependencies !== "boolean") {
+    throw new InputError("mapDependencies must be a boolean.");
+  }
   return {
     url: body.url,
+    mapDependencies: body.mapDependencies === true,
   };
 }
 
@@ -153,6 +158,7 @@ async function createScan(
   onProgress: (event: AnalyzerProgress) => void = () => {},
 ): Promise<ScanReport> {
   const normalized = normalizeUrl(input.url);
+  await enforceRateLimit(request, env);
   const cacheKey = await recentScanCacheKey(request.url, normalized.toString());
   const recentCache = await caches.open("requestscope-recent");
   const cached = await recentCache.match(cacheKey);
@@ -162,13 +168,12 @@ async function createScan(
     return report;
   }
 
-  await enforceRateLimit(request, env);
   const retention = clampInt(env.REPORT_RETENTION_DAYS, 14, 1, 90);
   const incomingCf = request.cf as Record<string, unknown> | undefined;
   const report = await analyzeUrl(input.url, retention, {
     colo: typeof incomingCf?.colo === "string" ? incomingCf.colo : undefined,
     country: typeof incomingCf?.country === "string" ? incomingCf.country : undefined,
-  }, onProgress);
+  }, onProgress, { mapDependencies: input.mapDependencies });
   await saveReport(env.DB, report);
   const cacheResponse = new Response(JSON.stringify(report), {
     headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${RECENT_SCAN_TTL}` },
