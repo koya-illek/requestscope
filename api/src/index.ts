@@ -292,6 +292,7 @@ function corsHeaders(origin: string | null): Record<string, string> {
 
 function securityHeaders(): Record<string, string> {
   return {
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
