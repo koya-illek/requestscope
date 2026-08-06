@@ -341,6 +341,16 @@
       `<span><strong class="${cls}">${escapeHtml(String(value))}</strong> ${escapeHtml(label)}</span>`
     ).join("");
 
+    // SSL / TLS
+    renderSsl(depMap.ssl);
+
+    // SDKs
+    renderSdks(depMap.sdks || []);
+
+    // Domains count badge
+    $("#domain-count").textContent = depMap.domains.length || "";
+    $("#domain-count").classList.toggle("hidden", !depMap.domains.length);
+
     // CSP
     const csp = depMap.sources.csp;
     $("#dep-csp").innerHTML = !csp.present
@@ -368,6 +378,7 @@
     // Domains table
     const domains = depMap.domains;
     $("#dep-map-domains").innerHTML = domains.length ? domains.map(d => {
+      const svc = d.serviceName ? `<span class="dep-svc">${escapeHtml(d.serviceName)}</span>` : "";
       const flags = [
         d.piiRisk ? `<span class="dep-flag dep-flag-pii" title="Likely transmits PII">PII</span>` : "",
         d.postAuthOnly ? `<span class="dep-flag dep-flag-auth" title="Only visible after authentication">POST-AUTH</span>` : "",
@@ -375,10 +386,75 @@
       return `<div class="dep-domain">
         <span class="dep-cat dep-cat-${escapeHtml(d.category)}">${escapeHtml(d.category)}</span>
         <span class="dep-host" title="${escapeAttr(d.evidence.join("; "))}">${escapeHtml(d.domain)}</span>
+        ${svc}
         <span class="dep-src">${escapeHtml(d.source)}</span>
         ${flags}
       </div>`;
     }).join("") : `<p class="dns-empty">No external domains discovered.</p>`;
+
+    // Takeover
+    renderTakeover(depMap.takeover || []);
+  }
+
+  function renderSsl(ssl) {
+    if (!ssl) {
+      $("#dep-ssl").innerHTML = `<p class="dns-empty">SSL data unavailable.</p>`;
+      return;
+    }
+    const expiry = ssl.daysUntilExpiry;
+    const expiryClass = expiry === null ? "" : expiry < 0 ? "warn" : expiry < 30 ? "warn" : "good";
+    const expiryText = expiry === null ? "Unknown" : expiry < 0 ? `EXPIRED ${Math.abs(expiry)}d ago` : `${expiry} days`;
+    const rows = [
+      ["Protocol", ssl.protocol || "Unknown"],
+      ["Cipher", ssl.cipher || "Unknown"],
+      ["Issuer", ssl.issuer || "Unknown"],
+      ["Subject", ssl.subject || "Unknown"],
+      ["Valid from", ssl.validFrom ? ssl.validFrom.slice(0, 10) : "Unknown"],
+      ["Valid to", ssl.validTo ? ssl.validTo.slice(0, 10) : "Unknown"],
+      ["Days to expiry", expiryText, expiryClass],
+    ];
+    $("#dep-ssl").innerHTML = `<div class="ssl-grid">${rows.map(([label, value, cls]) =>
+      `<div class="ssl-row"><span class="ssl-label">${escapeHtml(label)}</span><span class="ssl-value ${cls || ""}">${escapeHtml(String(value))}</span></div>`
+    ).join("")}</div>`;
+  }
+
+  function renderSdks(sdks) {
+    const countEl = $("#sdk-count");
+    countEl.textContent = sdks.length || "";
+    countEl.classList.toggle("hidden", !sdks.length);
+    if (!sdks.length) {
+      $("#dep-sdks").innerHTML = `<p class="dns-empty">No known SDK initialisations detected in JavaScript bundles.</p>`;
+      return;
+    }
+    $("#dep-sdks").innerHTML = `<div class="sdk-list">${sdks.map(s =>
+      `<div class="sdk-item">
+        <span class="dep-cat dep-cat-${escapeHtml(s.category)}">${escapeHtml(s.category)}</span>
+        <span class="sdk-name">${escapeHtml(s.name)}</span>
+        <span class="sdk-domain">${escapeHtml(s.domain)}</span>
+      </div>`
+    ).join("")}</div>`;
+  }
+
+  function renderTakeover(takeover) {
+    const countEl = $("#takeover-count");
+    const vulnerable = takeover.filter(t => t.vulnerable);
+    countEl.textContent = vulnerable.length ? `${vulnerable.length} VULNERABLE` : (takeover.length || "");
+    countEl.classList.toggle("hidden", !takeover.length);
+    countEl.classList.toggle("cs-count-alert", vulnerable.length > 0);
+    if (!takeover.length) {
+      $("#dep-takeover").innerHTML = `<p class="dns-empty">No subdomains with vulnerable CNAME patterns found.</p>`;
+      return;
+    }
+    $("#dep-takeover").innerHTML = takeover.map(t =>
+      `<div class="takeover-row ${t.vulnerable ? "takeover-vuln" : ""}">
+        <span class="takeover-status ${t.vulnerable ? "vuln" : "ok"}">${t.vulnerable ? "⚠ VULNERABLE" : "✓ OK"}</span>
+        <div class="takeover-detail">
+          <strong>${escapeHtml(t.subdomain)}</strong>
+          <code>CNAME → ${escapeHtml(t.cname || "none")}</code>
+          <span>${escapeHtml(t.evidence)}</span>
+        </div>
+      </div>`
+    ).join("");
   }
 
   const initialId = location.hash.slice(1);

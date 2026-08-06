@@ -43,7 +43,7 @@ const STORED_HEADERS = new Set([
 ]);
 
 export interface AnalyzerProgress {
-  stage: "validated" | "dns" | "hop" | "response" | "deps-csp" | "deps-js" | "deps-ct" | "deps-complete" | "complete";
+  stage: "validated" | "dns" | "hop" | "response" | "deps-csp" | "deps-js" | "deps-ct" | "deps-ssl" | "deps-takeover" | "deps-complete" | "complete";
   message: string;
   hop?: number;
   status?: number;

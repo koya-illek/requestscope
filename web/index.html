@@ -168,21 +168,41 @@
           <span class="evidence-badge">UNAUTHENTICATED SURFACE</span>
         </div>
         <div class="dep-map-summary" id="dep-map-summary"></div>
-        <div class="dep-map-source-grid">
-          <div class="dep-map-source">
-            <h4>CSP directives</h4>
-            <div id="dep-csp"></div>
-          </div>
-          <div class="dep-map-source">
-            <h4>JS bundle findings</h4>
-            <div id="dep-js"></div>
-          </div>
-          <div class="dep-map-source">
-            <h4>Certificate Transparency</h4>
-            <div id="dep-ct"></div>
-          </div>
-        </div>
-        <div class="dep-map-domains" id="dep-map-domains"></div>
+
+        <details class="collapsible-section" open>
+          <summary><span class="cs-icon">TLS</span> SSL / TLS certificate</summary>
+          <div class="cs-body" id="dep-ssl"></div>
+        </details>
+
+        <details class="collapsible-section" open>
+          <summary><span class="cs-icon">SDK</span> Detected SDKs <span class="cs-count" id="sdk-count"></span></summary>
+          <div class="cs-body" id="dep-sdks"></div>
+        </details>
+
+        <details class="collapsible-section" open>
+          <summary><span class="cs-icon">DOM</span> Discovered domains <span class="cs-count" id="domain-count"></span></summary>
+          <div class="cs-body dep-map-domains" id="dep-map-domains"></div>
+        </details>
+
+        <details class="collapsible-section">
+          <summary><span class="cs-icon">CSP</span> Content-Security-Policy</summary>
+          <div class="cs-body" id="dep-csp"></div>
+        </details>
+
+        <details class="collapsible-section">
+          <summary><span class="cs-icon">JS</span> JavaScript bundle analysis</summary>
+          <div class="cs-body" id="dep-js"></div>
+        </details>
+
+        <details class="collapsible-section">
+          <summary><span class="cs-icon">CT</span> Certificate Transparency subdomains</summary>
+          <div class="cs-body" id="dep-ct"></div>
+        </details>
+
+        <details class="collapsible-section">
+          <summary><span class="cs-icon">TKO</span> Subdomain takeover probe <span class="cs-count" id="takeover-count"></span></summary>
+          <div class="cs-body" id="dep-takeover"></div>
+        </details>
       </section>
 
       <div class="observation-note">

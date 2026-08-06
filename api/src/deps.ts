@@ -4,13 +4,14 @@ import {
   detectSdks as detectSdksFromClassifier,
   assessPiiRisk as classifierPiiRisk,
 } from "./classifier";
+import { inspectSsl } from "./ssl";
+import { probeTakeover } from "./takeover";
 import type {
   CertTransparencyAnalysis,
   CspAnalysis,
   DependencyMap,
   JsBundleAnalysis,
   MappedDomain,
-  SdkDetection,
   SslDetail,
   SubdomainTakeoverCheck,
 } from "./types";
@@ -78,6 +79,14 @@ export async function mapDependencies(
   // Detect SDKs from concatenated JS bundle text
   const sdks = detectSdksFromClassifier(rawJsText);
 
+  onProgress({ stage: "deps-ssl", message: "Inspecting SSL/TLS certificate" });
+  const ssl = await inspectSsl(hostname, null);
+
+  onProgress({ stage: "deps-takeover", message: "Probing subdomains for takeover risk" });
+  const takeover = certT.subdomains.length > 0
+    ? await probeTakeover(certT.subdomains)
+    : [];
+
   const byCategory = domains.reduce((acc, d) => {
     acc[d.category] = (acc[d.category] || 0) + 1;
     return acc;
@@ -91,6 +100,8 @@ export async function mapDependencies(
     sources: { csp, jsBundles, certTransparency: certT },
     domains: domains.sort((a, b) => a.domain.localeCompare(b.domain)),
     sdks,
+    ssl,
+    takeover,
     summary: {
       totalDomains: domains.length,
       byCategory,

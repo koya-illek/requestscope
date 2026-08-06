@@ -113,10 +113,6 @@ export interface SubdomainTakeoverCheck {
   httpStatus: number | null;
   vulnerable: boolean;
   evidence: string;
-  // Additional fields used by takeover probes
-  service?: string;
-  httpError?: string | null;
-  evidenceKind?: "derived_finding";
 }
 
 export interface ConsentPlatform {
@@ -154,6 +150,8 @@ export interface DependencyMap {
   };
   domains: MappedDomain[];
   sdks: SdkDetection[];
+  ssl: SslDetail;
+  takeover: SubdomainTakeoverCheck[];
   summary: {
     totalDomains: number;
     byCategory: Record<string, number>;
