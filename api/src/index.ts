@@ -159,7 +159,7 @@ async function createScan(
 ): Promise<ScanReport> {
   const normalized = normalizeUrl(input.url);
   await enforceRateLimit(request, env);
-  const cacheKey = await recentScanCacheKey(request.url, normalized.toString());
+  const cacheKey = await recentScanCacheKey(request.url, normalized.toString(), Boolean(input.mapDependencies));
   const recentCache = await caches.open("requestscope-recent");
   const cached = await recentCache.match(cacheKey);
   if (cached) {
@@ -217,8 +217,8 @@ function streamScan(
   });
 }
 
-async function recentScanCacheKey(requestUrl: string, targetUrl: string): Promise<Request> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(targetUrl));
+async function recentScanCacheKey(requestUrl: string, targetUrl: string, mapDeps: boolean): Promise<Request> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${targetUrl}:${mapDeps}`));
   const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
   const base = new URL(requestUrl);
   return new Request(`${base.origin}/__recent_scan/${hash}`, { method: "GET" });
