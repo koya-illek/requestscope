@@ -1,14 +1,20 @@
 import { inspectDns, queryDns } from "./dns";
+import { getDomain } from "tldts";
 import { mapDependencies } from "./deps";
 import { buildFindings } from "./findings";
+import { checkExternalReputation, type ReputationConfig } from "./reputation";
+import { assessUrlRisk, type UrlRiskContext } from "./url-risk";
 import {
   BlockedTargetError,
   isPublicIp,
   normalizeUrl,
   redactUrlForStorage,
   safeRedirect,
+  redactHeaderForStorage,
 } from "./security";
-import type { Dependency, RedirectHop, ScanReport } from "./types";
+import { RequestBudget, BudgetExceededError } from "./budget";
+import { assertPublicTarget, assertResolutionHealthy, uniqueAddresses } from "./egress";
+import type { Dependency, PageSecuritySignals, RedirectHop, ScanReport, PhaseCoverage } from "./types";
 
 const MAX_REDIRECTS = 6;
 const MAX_BODY_BYTES = 256 * 1024;
@@ -43,7 +49,7 @@ const STORED_HEADERS = new Set([
 ]);
 
 export interface AnalyzerProgress {
-  stage: "validated" | "dns" | "hop" | "response" | "deps-csp" | "deps-js" | "deps-ct" | "deps-ssl" | "deps-takeover" | "deps-complete" | "complete";
+  stage: "validated" | "dns" | "hop" | "response" | "reputation" | "deps-csp" | "deps-js" | "deps-ct" | "deps-ssl" | "deps-takeover" | "deps-complete" | "complete";
   message: string;
   hop?: number;
   status?: number;
@@ -52,20 +58,26 @@ export interface AnalyzerProgress {
 export async function analyzeUrl(
   rawUrl: unknown,
   retentionDays: number,
-  observer: { colo?: string; country?: string } = {},
+  observer: { colo?: string; country?: string; sourceRevision?: string } = {},
   onProgress: (event: AnalyzerProgress) => void = () => {},
-  options: { mapDependencies?: boolean } = {},
+  options: { mapDependencies?: boolean; riskContext?: UrlRiskContext; reputation?: ReputationConfig; budget?: RequestBudget } = {},
 ): Promise<ScanReport> {
   const started = performance.now();
+  const budget = options.budget || new RequestBudget();
+  const scanBudgetStart = budget.snapshot();
   const initial = normalizeUrl(rawUrl);
   onProgress({ stage: "validated", message: `Validated ${initial.hostname}` });
   const id = randomId();
   const createdAt = new Date();
   const expiresAt = new Date(createdAt.getTime() + retentionDays * 86_400_000);
-  const dnsQueries = await inspectDns(initial.hostname);
-  assertPublicResolution(initial.hostname, dnsQueries);
-  await assertSecondaryResolutionPublic(initial.hostname);
-  onProgress({ stage: "dns", message: `Resolved ${addressAnswers(dnsQueries).length} public address records` });
+  const dnsQueries = await inspectDns(initial.hostname, budget);
+  assertResolutionHealthy(initial.hostname, dnsQueries);
+  const initialAddresses = uniqueAddresses(dnsQueries);
+  if (initialAddresses.some((address) => !isPublicIp(address))) {
+    throw new BlockedTargetError("The hostname resolves to a private or reserved network address.");
+  }
+  await assertSecondaryResolutionPublic(initial.hostname, budget);
+  onProgress({ stage: "dns", message: `Resolved ${initialAddresses.length} public address records` });
 
   const hops: RedirectHop[] = [];
   let current = initial;
@@ -79,15 +91,16 @@ export async function analyzeUrl(
     const hopStarted = performance.now();
     let response: Response;
     try {
-      response = await fetch(current.toString(), {
+      response = await budget.fetch(current.toString(), {
         method: "GET",
         redirect: "manual",
         cache: "no-store",
         headers: {
           Accept: "text/html,application/xhtml+xml,application/json;q=0.8,*/*;q=0.5",
-          "User-Agent": "RequestScope/1.0 (+https://requestscope.pages.dev)",
+          "User-Agent": "RequestScope/1.0 (+https://requestscope.illek.ie)",
         },
         signal: AbortSignal.timeout(10_000),
+        resource: "http",
       });
     } catch (error) {
       status = hops.length > 0 ? "partial" : "failed";
@@ -103,7 +116,9 @@ export async function analyzeUrl(
         cf: {},
         error: error instanceof DOMException && error.name === "TimeoutError"
           ? "Request timed out after 10 seconds"
-          : "Network request failed",
+          : error instanceof BudgetExceededError
+            ? "Request budget exhausted before the next hop"
+            : "Network request failed",
         evidenceKind: "edge_http_observation",
       });
       onProgress({ stage: "hop", hop: index, status: 0, message: `Request to ${current.hostname} failed` });
@@ -119,7 +134,7 @@ export async function analyzeUrl(
       statusText: response.statusText,
       elapsedMs: Math.round(performance.now() - hopStarted),
       location: location ? redactRedirectLocation(current, location) : null,
-      responseHeaders: selectHeaders(response.headers),
+      responseHeaders: selectHeaders(response.headers, current),
       cf: extractCf(response),
       evidenceKind: "edge_http_observation",
     };
@@ -143,7 +158,7 @@ export async function analyzeUrl(
       }
       try {
         const next = safeRedirect(current, location);
-        await assertTargetPublic(next.hostname);
+        await assertPublicTarget(next.hostname, budget);
         response.body?.cancel();
         current = next;
       } catch (error) {
@@ -157,7 +172,7 @@ export async function analyzeUrl(
 
     finalResponse = response;
     try {
-      const body = await readBoundedBody(response, MAX_BODY_BYTES);
+      const body = await readBoundedBody(response, MAX_BODY_BYTES, budget);
       bodyText = body.text;
       bytesInspected = body.bytes;
       truncated = body.truncated;
@@ -174,6 +189,9 @@ export async function analyzeUrl(
     : [];
   const dependencies = dependenciesRaw.map((item) => ({ ...item, url: redactUrlForStorage(item.url) }));
   const uniqueHosts = [...new Set(dependencies.map((item) => item.host))].sort();
+  const pageSecuritySignals = finalResponse && isHtml(finalResponse.headers.get("content-type"))
+    ? extractPageSecuritySignals(bodyText, current)
+    : undefined;
   const base = {
     schemaVersion: 1 as const,
     id,
@@ -184,16 +202,17 @@ export async function analyzeUrl(
     status,
     createdAt: createdAt.toISOString(),
     expiresAt: expiresAt.toISOString(),
-    totalDurationMs: Math.round(performance.now() - started),
+    totalDurationMs: 0,
     observation: {
       vantage: "cloudflare-edge" as const,
       colo: observer.colo || hops.find((hop) => hop.cf.colo)?.cf.colo,
       country: observer.country || hops.find((hop) => hop.cf.country)?.cf.country,
       disclaimer: "HTTP timings are Cloudflare edge observations, not browser DNS, TCP, TLS, or rendering timings.",
+      sourceRevision: observer.sourceRevision,
     },
     dns: {
       queries: dnsQueries,
-      addresses: addressAnswers(dnsQueries),
+      addresses: uniqueAddresses(dnsQueries),
       dnssecAuthenticated: dnsQueries.some((query) => query.authenticatedData),
     },
     http: {
@@ -203,6 +222,7 @@ export async function analyzeUrl(
       contentBytesInspected: bytesInspected,
       truncated,
     },
+    pageSecuritySignals,
     dependencies: {
       total: dependencies.length,
       firstParty: dependencies.filter((item) => item.party === "first-party").length,
@@ -211,6 +231,8 @@ export async function analyzeUrl(
       items: dependencies,
     },
   };
+  const coreBudget = budget.snapshot();
+  const dependencyBudgetBefore = budget.snapshot();
   let dependencyMap: ScanReport["dependencyMap"] = undefined;
   if (options.mapDependencies && finalResponse) {
     dependencyMap = await mapDependencies(
@@ -219,8 +241,20 @@ export async function analyzeUrl(
       hops.at(-1)?.responseHeaders || {},
       dependencies.filter((d) => d.type === "script").map((d) => ({ url: d.url, host: d.host })),
       (event) => onProgress({ stage: event.stage as AnalyzerProgress["stage"], message: event.message }),
+      budget,
     );
   }
+  const dependencyBudgetAfter = budget.snapshot();
+
+  if (options.reputation?.enabled) {
+    onProgress({ stage: "reputation", message: "Checking consented external reputation sources" });
+  }
+  const reputation = await checkExternalReputation(
+    initial.toString(),
+    finalResponse ? current.toString() : null,
+    { ...(options.reputation || { enabled: false }), budget },
+  );
+  const reputationBudget = budget.snapshot();
 
   const findings = buildFindings(base);
   const summary = {
@@ -229,48 +263,86 @@ export async function analyzeUrl(
     positive: findings.filter((item) => item.severity === "positive").length,
     info: findings.filter((item) => item.severity === "info").length,
   };
+  const finalBudget = budget.snapshot();
+  const report = {
+    ...base,
+    totalDurationMs: Math.round(performance.now() - started),
+    dependencyMap,
+    findings,
+    summary,
+    coverage: {
+      status: (status === "complete" && !budget.exhausted ? "complete" : "partial") as "complete" | "partial",
+      budget: finalBudget,
+      phases: {
+        core: phaseCoverage("core", scanBudgetStart, coreBudget, base.http.contentBytesInspected, base.http.truncated, status === "complete" ? undefined : "Core trace is partial."),
+        dependencies: dependencyMap?.coverage || phaseCoverage("dependencies", dependencyBudgetBefore, dependencyBudgetAfter, 0, false, options.mapDependencies ? "Dependency map unavailable" : "Dependency mapping was not requested."),
+        reputation: phaseCoverage("reputation", dependencyBudgetAfter, reputationBudget, 0, false, options.reputation?.enabled
+          ? reputation.status === "not_configured" ? "No reputation provider is configured." : undefined
+          : "External reputation was not requested."),
+      },
+    },
+    provenance: {
+      apiVersion: "1.4.0",
+      sourceRevision: observer.sourceRevision || "uncommitted-source",
+      reportSchemaVersion: 1,
+      databaseSchemaVersion: 1,
+    },
+  };
+  const urlRisk = assessUrlRisk(report, typeof rawUrl === "string" ? rawUrl : initial.toString(), options.riskContext, reputation);
   onProgress({ stage: "complete", message: "Report complete" });
-  return { ...base, dependencyMap, findings, summary };
+  return { ...report, urlRisk };
 }
 
-async function assertTargetPublic(hostname: string): Promise<void> {
-  const [cloudflare, google] = await Promise.all([
-    Promise.all([queryDns(hostname, "A"), queryDns(hostname, "AAAA")]),
-    Promise.all([queryDns(hostname, "A", "google"), queryDns(hostname, "AAAA", "google")]),
-  ]);
-  assertPublicResolution(hostname, cloudflare);
-  assertPublicResolution(hostname, google);
-}
-
-async function assertSecondaryResolutionPublic(hostname: string): Promise<void> {
-  const results = await Promise.all([
-    queryDns(hostname, "A", "google"),
-    queryDns(hostname, "AAAA", "google"),
-  ]);
-  assertPublicResolution(hostname, results);
-}
-
-function assertPublicResolution(hostname: string, queries: Awaited<ReturnType<typeof inspectDns>>): void {
-  const addresses = addressAnswers(queries);
-  if (addresses.length === 0) {
-    throw new BlockedTargetError(`No public A or AAAA address could be confirmed for ${hostname}.`);
+export function extractPageSecuritySignals(html: string, pageUrl: URL): PageSecuritySignals {
+  const forms = [...html.matchAll(/<form\b[^>]*>/gi)];
+  const passwordForm = /<input\b[^>]*\btype\s*=\s*["']?password\b/i.test(html);
+  let externalFormAction = false;
+  for (const match of forms) {
+    const action = match[0].match(/\baction\s*=\s*["']([^"'<>]+)["']/i)?.[1];
+    if (!action) continue;
+    try {
+      const target = new URL(decodeHtmlAttribute(action), pageUrl);
+      if ((target.protocol === "http:" || target.protocol === "https:") && !sameSite(pageUrl.hostname, target.hostname)) {
+        externalFormAction = true;
+      }
+    } catch {
+      // Malformed actions do not create evidence.
+    }
   }
-  const blocked = addresses.filter((address) => !isPublicIp(address));
-  if (blocked.length > 0) {
+
+  const text = html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&(?:nbsp|amp|quot|#39);/gi, " ")
+    .replace(/\s+/g, " ")
+    .slice(0, 100_000)
+    .toLowerCase();
+  const matchedLanguage: PageSecuritySignals["matchedLanguage"] = [];
+  if (/\b(?:log[ -]?in|sign[ -]?in|authenticate)\b/.test(text)) matchedLanguage.push("login");
+  if (/\b(?:verify|verification|confirm (?:your|the) (?:account|identity))\b/.test(text)) matchedLanguage.push("verification");
+  if (/\b(?:reset|expired|update|change) (?:your )?password\b/.test(text)) matchedLanguage.push("password-reset");
+  if (/\b(?:payment|billing|invoice|credit card|debit card|bank account)\b/.test(text)) matchedLanguage.push("payment");
+  return { passwordForm, forms: forms.length, externalFormAction, matchedLanguage };
+}
+
+async function assertSecondaryResolutionPublic(hostname: string, budget: RequestBudget): Promise<void> {
+  const results = await Promise.all([
+    queryDns(hostname, "A", "google", budget),
+    queryDns(hostname, "AAAA", "google", budget),
+  ]);
+  assertResolutionHealthy(hostname, results);
+  if (uniqueAddresses(results).some((address) => !isPublicIp(address))) {
     throw new BlockedTargetError("The hostname resolves to a private or reserved network address.");
   }
 }
 
-function addressAnswers(queries: Awaited<ReturnType<typeof inspectDns>>): string[] {
-  return [...new Set(queries.flatMap((query) =>
-    query.answers.filter((answer) => answer.type === "A" || answer.type === "AAAA").map((answer) => answer.data),
-  ))];
-}
-
-function selectHeaders(headers: Headers): Record<string, string> {
+function selectHeaders(headers: Headers, baseUrl: URL): Record<string, string> {
   const selected: Record<string, string> = {};
   for (const [name, value] of headers.entries()) {
-    if (STORED_HEADERS.has(name.toLowerCase())) selected[name.toLowerCase()] = value.slice(0, 4096);
+    if (STORED_HEADERS.has(name.toLowerCase())) {
+      selected[name.toLowerCase()] = redactHeaderForStorage(name, value.slice(0, 4096), baseUrl);
+    }
   }
   return selected;
 }
@@ -293,7 +365,7 @@ function extractCf(response: Response): RedirectHop["cf"] {
   };
 }
 
-async function readBoundedBody(response: Response, limit: number): Promise<{ text: string; bytes: number; truncated: boolean }> {
+async function readBoundedBody(response: Response, limit: number, budget: RequestBudget): Promise<{ text: string; bytes: number; truncated: boolean }> {
   if (!response.body) return { text: "", bytes: 0, truncated: false };
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -304,16 +376,25 @@ async function readBoundedBody(response: Response, limit: number): Promise<{ tex
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      if (total + value.byteLength > limit) {
-        const remaining = Math.max(0, limit - total);
+      const requestRemaining = Math.max(0, limit - total);
+      const budgetRemaining = budget.remainingBodyBytes;
+      if (requestRemaining === 0 || budgetRemaining === 0) {
+        truncated = true;
+        await reader.cancel();
+        break;
+      }
+      if (total + value.byteLength > limit || value.byteLength > budgetRemaining) {
+        const remaining = Math.min(requestRemaining, budgetRemaining);
         if (remaining) chunks.push(value.slice(0, remaining));
         total += remaining;
+        budget.inspectBytes(remaining);
         truncated = true;
         await reader.cancel();
         break;
       }
       chunks.push(value);
       total += value.byteLength;
+      budget.inspectBytes(value.byteLength);
     }
   } finally {
     reader.releaseLock();
@@ -384,7 +465,10 @@ function classifyLink(tag: string, url: URL): Dependency["type"] {
 }
 
 function sameSite(a: string, b: string): boolean {
-  return a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
+  if (a === b) return true;
+  const aDomain = getDomain(a, { allowPrivateDomains: true });
+  const bDomain = getDomain(b, { allowPrivateDomains: true });
+  return Boolean(aDomain && bDomain && aDomain === bDomain);
 }
 
 function decodeHtmlAttribute(value: string): string {
@@ -393,6 +477,39 @@ function decodeHtmlAttribute(value: string): string {
     .replace(/&quot;/gi, '"')
     .replace(/&#39;|&apos;/gi, "'")
     .trim();
+}
+
+function phaseCoverage(
+  name: "core" | "dependencies" | "reputation",
+  before: ReturnType<RequestBudget["snapshot"]>,
+  after: ReturnType<RequestBudget["snapshot"]>,
+  bytesInspected: number,
+  truncated: boolean,
+  detail?: string,
+): PhaseCoverage {
+  const attempted = Math.max(0, after.subrequestsStarted - before.subrequestsStarted);
+  const successful = Math.max(0, after.subrequestsSucceeded - before.subrequestsSucceeded);
+  const failed = Math.max(0, after.subrequestsFailed - before.subrequestsFailed);
+  const skipped = detail && /not requested|unavailable|skipped/i.test(detail) ? 1 : 0;
+  return {
+    status: detail && /not requested|unavailable|skipped/i.test(detail)
+      ? "skipped"
+      : detail && /partial/i.test(detail)
+        ? "partial"
+      : failed && successful === 0
+        ? "failed"
+        : after.exhausted || truncated
+          ? "partial"
+          : "complete",
+    attempted,
+    successful,
+    failed,
+    skipped,
+    bytesInspected,
+    truncated,
+    durationMs: Math.max(0, after.elapsedMs - before.elapsedMs),
+    ...(detail ? { detail: `${name}: ${detail}` } : {}),
+  };
 }
 
 function randomId(): string {

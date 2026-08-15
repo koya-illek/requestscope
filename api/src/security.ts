@@ -43,6 +43,9 @@ export function normalizeUrl(input: unknown): URL {
 export function redactUrlForStorage(input: string): string {
   try {
     const url = new URL(input);
+    // Fragments are never sent to an origin, but they commonly contain bearer
+    // tokens and access state. Remove them before any report field is stored.
+    url.hash = "";
     if (url.search) {
       for (const key of [...url.searchParams.keys()]) {
         url.searchParams.set(key, "[redacted]");
@@ -52,6 +55,38 @@ export function redactUrlForStorage(input: string): string {
   } catch {
     return "[invalid URL]";
   }
+}
+
+/** Sanitize a stored header or other text that may contain URL-shaped data. */
+export function redactTextForStorage(input: string): string {
+  return input
+    .replace(/https?:\/\/[^\s"'<>]+/gi, (value) => {
+      const trailing = value.match(/[),.;]+$/)?.[0] || "";
+      const candidate = trailing ? value.slice(0, -trailing.length) : value;
+      return `${redactUrlForStorage(candidate)}${trailing}`;
+    })
+    .replace(/([?&#](?:token|secret|signature|sig|api[_-]?key|access[_-]?token|auth|code|state|nonce|key)=)[^&#\s"'<>]*/gi, "$1[redacted]")
+    .replace(/\b(token|secret|signature|api[_-]?key|access[_-]?token|auth|nonce)\s*[:=]\s*["']?[^,;\s"'`}]+/gi, "$1=[redacted]");
+}
+
+/** Sanitize URL-bearing response headers without retaining raw report targets. */
+export function redactHeaderForStorage(name: string, value: string, baseUrl?: URL): string {
+  const lower = name.toLowerCase();
+  if (lower === "location") {
+    try { return redactUrlForStorage(new URL(value, baseUrl).toString()); } catch { return "[invalid redirect URL]"; }
+  }
+  if (lower === "content-security-policy") {
+    return redactTextForStorage(value).replace(/#[^\s;]+/g, "");
+  }
+  if (lower === "nel" || lower === "report-to") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return redactTextForStorage(JSON.stringify(parsed));
+    } catch {
+      return redactTextForStorage(value);
+    }
+  }
+  return redactTextForStorage(value);
 }
 
 export function isValidHostname(hostname: string): boolean {

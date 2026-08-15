@@ -3,22 +3,23 @@
 RequestScope shows every observable step between a URL and the page it delivers.
 It performs an evidence-labelled DNS and HTTP trace, follows redirects manually,
 inspects response and cache behaviour, extracts bounded HTML resource references,
-and creates a privacy-redacted shareable report.
+creates a privacy-redacted shareable report, and produces an explainable URL
+security risk assessment suitable for people or Copilot agents.
 
 ## Architecture
 
 ```text
-Cloudflare Pages                         Cloudflare Worker
-┌───────────────────────┐               ┌─────────────────────────┐
-│ Static application    │── HTTPS ─────▶│ Validation + rate limit │
-│ Interactive timeline  │               │ DNS-over-HTTPS          │
-│ Findings + raw data   │◀──────────────│ Manual HTTP trace       │
-└───────────────────────┘               │ Evidence engine         │
-                                        └────────────┬────────────┘
-                                                     │
-                                                     ▼
-                                               Cloudflare D1
-                                             shareable reports
+Cloudflare Worker
+┌─────────────────────────────────────────────┐
+│ Static application assets                  │
+│ Validation + privacy-preserving rate limit │
+│ DNS-over-HTTPS + manual HTTP trace         │
+│ Evidence + optional reputation adapters    │
+└──────────────────────┬──────────────────────┘
+                       │
+                       ▼
+                 Cloudflare D1
+               reports + quotas
 ```
 
 The Worker never claims to measure browser DNS, TCP, or TLS timings. HTTP
@@ -46,14 +47,95 @@ Serve `web/` with any static web server and set its API endpoint in
 ```text
 GET  /api/health
 GET  /api
-POST /api/scans       {"url":"https://example.com"}
+POST /api/scans       {"url":"https://example.com","externalReputation":false}
 POST /api/scans/stream  NDJSON progress stream and final report
+POST /api/v1/url-risk {"url":"https://example.com","claimedOrganisation":"Microsoft","messageContext":"Password reset email"}
+POST /mcp              Streamable HTTP MCP (also available at /mcp/v2)
 GET  /api/scans/:id
 GET  /api/scans/:id/export
 ```
+
+`POST /api/v1/url-risk` is the stable, compact integration contract for
+Microsoft Copilot custom connectors and other automation. It follows redirects
+and returns a low, medium, or high assessment with scored evidence for URL
+structure, shorteners, cross-domain redirects, Unicode and brand lookalikes,
+known service ownership, password/forms, and sensitive-action language. Raw
+HTML and raw message context are never returned to the agent. See
+[`web/openapi.yaml`](web/openapi.yaml) for the connector definition.
+
+For an authenticated Copilot deployment, set the Worker secret
+`COPILOT_API_KEY` and configure the custom connector to send it as a Bearer
+token. If the secret is absent, the endpoint remains available under the same
+anonymous daily rate limit as normal scans.
+
+A low assessment means that RequestScope did not observe strong indicators; it
+does not certify that a URL is safe. External reputation is opt-in because the
+original and final URL are sent to Google Web Risk and PhishTank. Only provider,
+status, hostname, threat categories, timestamps, and attribution are retained;
+raw provider responses and unredacted URLs are not stored in reports.
+
+Cloudflare's 1.1.1.1 for Families malware resolver is also available as a
+supplementary domain-level signal. It receives only the requested and final
+hostnames over DNS-over-HTTPS, never the full URL or query string.
+
+Configure providers as Worker secrets after accepting their terms:
+
+```bash
+cd api
+npx wrangler d1 execute requestscope --remote --file schema.sql
+npx wrangler secret put GOOGLE_WEB_RISK_API_KEY
+npx wrangler secret put PHISHTANK_APP_KEY
+npx wrangler deploy
+```
+
+PhishTank currently permits API calls without an application key, but assigns a
+lower provider-side request limit. Set `PHISHTANK_KEYLESS_ENABLED = "true"` and
+use a conservative `PHISHTANK_DAILY_LIMIT` when registration is unavailable.
+An application key, when available, automatically replaces keyless mode.
+Verify keyless access from the deployed Worker before leaving it enabled;
+PhishTank may apply an automated browser challenge unless the request uses its
+documented `phishtank/<identifier>` User-Agent form.
+
+Google Web Risk Lookup has an application-enforced default ceiling of 90,000
+requests per calendar month, below its 100,000-request free allowance.
+PhishTank has a separate application-enforced daily ceiling. Provider results are
+cached, and only the submitted and final URL are eligible for lookup.
+
+The UI also offers a separate public deep-scan handoff to Cloudflare Radar. It
+does not submit automatically and warns that Cloudflare retains scan reports
+and may make them public.
+
+## MCP for Copilot and ChatGPT agents
+
+The Worker exposes a stateless Streamable HTTP MCP server at:
+
+```text
+https://requestscope.illek.ie/mcp
+https://requestscope.illek.ie/mcp/v2
+```
+
+Both URLs expose one tool, `assess_url_risk`, backed by exactly the same scan
+and scoring engine as the REST endpoint. `/mcp/v2` is a versioned RequestScope
+alias; the negotiated MCP protocol version is `2025-11-25`.
+
+- Copilot Studio: import [`web/mcp-copilot.yaml`](web/mcp-copilot.yaml), or enter the
+  `/mcp` URL through its MCP onboarding wizard.
+- OpenAI Responses API: configure a remote MCP tool with `server_url` set to
+  the `/mcp` URL and allow the `assess_url_risk` tool.
+- OpenAPI agents/custom connectors: import [`web/openapi.yaml`](web/openapi.yaml) and
+  call `/api/v1/url-risk` directly.
+
+The REST and MCP endpoints intentionally remain open for initial testing and
+share the anonymous daily scan limit. Before wider MSP use, set
+`COPILOT_API_KEY`; both interfaces then require `Authorization: Bearer ...`.
 
 The Worker root redirects human visitors to the Pages application.
 
 Reports expire after 14 days by default. No raw visitor IP address is stored.
 Query parameter names are retained for evidence, but their values are redacted
 before reports enter D1, responses, exports, or share links.
+
+The site owner can exempt trusted source IPs from scan and MCP scan limits by
+setting the `RATE_LIMIT_BYPASS_IPS` Worker secret to a comma-separated list.
+This value must never be placed in `wrangler.toml`; report retrieval limits and
+all upstream provider quotas still apply.

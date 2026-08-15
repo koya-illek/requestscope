@@ -1,5 +1,7 @@
 import type { SubdomainTakeoverCheck } from "./types";
 import { queryDns } from "./dns";
+import { fetchPublicUrl } from "./egress";
+import type { RequestBudget } from "./budget";
 
 const MAX_PROBES = 20;
 const PROBE_TIMEOUT = 5_000;
@@ -218,8 +220,14 @@ async function readBodyLimited(response: Response): Promise<string> {
   while (bytesRead < MAX_BODY_BYTES) {
     const { done, value } = await reader.read();
     if (done) break;
-    bytesRead += value.byteLength;
-    body += decoder.decode(value, { stream: true });
+    const remaining = MAX_BODY_BYTES - bytesRead;
+    const chunk = value.byteLength > remaining ? value.slice(0, remaining) : value;
+    bytesRead += chunk.byteLength;
+    body += decoder.decode(chunk, { stream: bytesRead < MAX_BODY_BYTES });
+    if (chunk.byteLength < value.byteLength) {
+      await reader.cancel();
+      break;
+    }
   }
   body += decoder.decode(); // flush
 
@@ -235,9 +243,10 @@ async function readBodyLimited(response: Response): Promise<string> {
  */
 async function probeSubdomain(
   subdomain: string,
+  budget?: RequestBudget,
 ): Promise<SubdomainTakeoverCheck> {
   // Step 1: Query CNAME
-  const dnsResult = await queryDns(subdomain, "CNAME");
+  const dnsResult = await queryDns(subdomain, "CNAME", "cloudflare", budget);
 
   if (dnsResult.error || dnsResult.answers.length === 0) {
     return {
@@ -278,12 +287,10 @@ async function probeSubdomain(
   }
 
   // Step 3: HTTP probe to look for takeover signatures
-  const url = `https://${subdomain}`;
   try {
-    const response = await fetch(url, {
-      redirect: "follow",
-      signal: AbortSignal.timeout(PROBE_TIMEOUT),
-    });
+    const { response, url } = budget
+      ? await fetchPublicUrl(`https://${subdomain}`, budget, { signal: AbortSignal.timeout(PROBE_TIMEOUT), resource: "takeover" }, 2)
+      : { response: await fetch(`https://${subdomain}`, { redirect: "manual", signal: AbortSignal.timeout(PROBE_TIMEOUT) }), url: new URL(`https://${subdomain}`) };
 
     const httpStatus = response.status;
     const isErrorStatus = httpStatus === 404 || httpStatus === 410;
@@ -304,7 +311,7 @@ async function probeSubdomain(
         resolvable: true,
         httpStatus,
         vulnerable: true,
-        evidence: `${match.service} takeover signature found in HTTP response (status ${httpStatus})`,
+        evidence: `${match.service} takeover signature found in HTTP response (status ${httpStatus}) at ${url.hostname}`,
       };
     }
 
@@ -354,27 +361,25 @@ async function probeSubdomain(
  */
 export async function probeTakeover(
   subdomains: string[],
+  budget?: RequestBudget,
 ): Promise<SubdomainTakeoverCheck[]> {
   const targets = subdomains.slice(0, MAX_PROBES);
-
-  const results = await Promise.allSettled(
-    targets.map((subdomain) => probeSubdomain(subdomain)),
-  );
-
-  return results
-    .map((result, index) => {
-      if (result.status === "fulfilled") {
-        return result.value;
-      }
-      // Defensive — probeSubdomain catches its own errors, but be safe
-      return {
-        subdomain: targets[index],
+  const results: SubdomainTakeoverCheck[] = [];
+  for (const subdomain of targets) {
+    if (budget && !budget.canStart()) break;
+    try {
+      const check = await probeSubdomain(subdomain, budget);
+      if (check.cname !== null) results.push(check);
+    } catch (error) {
+      results.push({
+        subdomain,
         cname: null,
         resolvable: false,
         httpStatus: null,
         vulnerable: false,
-        evidence: `Probe rejected: ${result.reason}`,
-      } satisfies SubdomainTakeoverCheck;
-    })
-    .filter((check) => check.cname !== null);
+        evidence: `Probe rejected: ${error instanceof Error ? error.message : "unknown error"}`,
+      });
+    }
+  }
+  return results;
 }

@@ -28,6 +28,8 @@ describe("analyzeUrl", () => {
           <link rel="stylesheet" href="/app.css?version=123">
           <style>.hero{background:url("https://cdn.example.net/hero.jpg?sig=secret")}</style>
         </head><body>
+          <form action="https://collector.example.net/session"><input type="password"></form>
+          <p>Verify your account and reset your password.</p>
           <img srcset="/small.jpg 1x, /large.jpg 2x">
           <script src="https://cdn.example.net/app.js"></script>
         </body></html>`, {
@@ -51,6 +53,13 @@ describe("analyzeUrl", () => {
     expect(JSON.stringify(report)).not.toContain("secret");
     expect(report.dependencies.items.length).toBeGreaterThanOrEqual(4);
     expect(report.dependencies.items.every((item) => !item.url.includes("sig=secret"))).toBe(true);
+    expect(report.pageSecuritySignals).toMatchObject({
+      passwordForm: true,
+      forms: 1,
+      externalFormAction: true,
+      matchedLanguage: expect.arrayContaining(["verification", "password-reset"]),
+    });
+    expect(report.urlRisk?.findings.some((item) => item.code === "external-form-action")).toBe(true);
     expect(stages).toEqual(expect.arrayContaining(["validated", "dns", "hop", "response", "complete"]));
   });
 
@@ -82,6 +91,36 @@ describe("analyzeUrl", () => {
     const report = await analyzeUrl("https://example.com", 14);
     expect(report.http.truncated).toBe(true);
     expect(report.http.contentBytesInspected).toBe(256 * 1024);
+  });
+
+  it("fails closed when a resolver errors instead of treating a sibling answer as enough", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (url.hostname === "cloudflare-dns.com" || url.hostname === "dns.google") {
+        if (url.searchParams.get("type") === "AAAA" && url.hostname === "cloudflare-dns.com") return new Response(null, { status: 503 });
+        return dnsResponse(url);
+      }
+      return new Response("ok", { headers: { "Content-Type": "text/html" } });
+    }));
+    await expect(analyzeUrl("https://example.com", 14)).rejects.toThrow(/inconclusive|DNS/i);
+  });
+
+  it("does not fetch a private dependency script or a script redirect escape", async () => {
+    const requested: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      requested.push(url.toString());
+      if (url.hostname === "cloudflare-dns.com" || url.hostname === "dns.google") return dnsResponse(url);
+      if (url.hostname === "crt.sh") return Response.json([]);
+      if (url.pathname.endsWith("/private.js")) return new Response("alert(1)");
+      if (url.pathname.endsWith("/redirect.js")) return new Response(null, { status: 302, headers: { Location: "http://127.0.0.1/metadata" } });
+      return new Response('<html><script src="http://127.0.0.1/private.js"></script><script src="https://cdn.example.net/redirect.js"></script></html>', {
+        headers: { "Content-Type": "text/html" },
+      });
+    }));
+    const report = await analyzeUrl("https://example.com", 14, {}, () => {}, { mapDependencies: true });
+    expect(report.coverage?.phases.dependencies.status).toMatch(/complete|partial/);
+    expect(requested.some((value) => value.includes("127.0.0.1"))).toBe(false);
   });
 });
 

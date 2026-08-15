@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="RequestScope privacy and data-processing notice.">
+  <meta name="theme-color" content="#08110f">
+  <link rel="canonical" href="https://requestscope.illek.ie/privacy.html">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <title>RequestScope privacy notice</title>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="RequestScope home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>Request<span>Scope</span></span></a>
+    <a class="text-button" href="./">Back to trace</a>
+  </header>
+  <main id="main-content" class="privacy-page">
+    <h1>RequestScope privacy notice</h1>
+    <p class="hero-copy">This notice describes what a trace sends, what RequestScope retains, and which optional services receive data. It applies to the open testing service at requestscope.illek.ie.</p>
+    <section class="panel privacy-panel">
+      <h2>What is retained</h2>
+      <p>A report is retained in Cloudflare D1 for up to 14 days. It contains a generated report ID, redacted requested and final URLs, hostnames, DNS observations, bounded HTTP status and selected redacted headers, redirect timing, static HTML reference metadata, derived findings, optional coverage, and release provenance.</p>
+      <p>Query values and URL fragments are removed before storage. URL-bearing Location, Content-Security-Policy, NEL, Report-To, and derived JavaScript evidence are sanitized. Raw page bodies, cookies, caller headers, message context, and provider response bodies are not retained.</p>
+      <h2>What the trace contacts</h2>
+      <ul>
+        <li>Cloudflare DNS and Google Public DNS receive hostnames and record types for public-target validation. Resolver responses are stored as DNS observations in the report.</li>
+        <li>The inspected public target receives one or more GET requests without cookies or caller-supplied headers. Redirects are followed manually under a whole-request budget.</li>
+        <li>The optional dependency map may contact crt.sh for Certificate Transparency history, fetch a bounded set of public JavaScript bundles, and query CNAME records for CT-discovered hostnames. Each derived request uses the same public-target gate. Coverage can be partial or skipped.</li>
+        <li>RequestScope does not execute browser JavaScript, submit forms, probe private networks, or send inspected page bodies to reputation providers.</li>
+      </ul>
+      <h2>Optional reputation consent</h2>
+      <p>Reputation is disabled unless the checkbox or request field is explicitly enabled. Google Web Risk and PhishTank receive the complete original and final URL, including query values, because those values can affect a match. PhishTank may record request parameters and the source IP used for the request. Cloudflare's malware-filtering DNS receives hostnames only. These services have their own terms and privacy notices. A provider not listing a URL is not proof of safety.</p>
+      <h2>Access and abuse controls</h2>
+      <p>Reports use opaque bearer-style IDs and are intended for limited sharing during open testing. Scan creation and provider quotas use bounded daily counters with hashed client keys. Valid report reads and MCP handshake or discovery requests do not write D1 rate-limit rows. The service is not a tenant boundary and should not receive confidential customer URLs during testing.</p>
+      <h2>Your choices</h2>
+      <p>Do not submit URLs containing credentials, private customer data, session tokens, or reset links. Leave optional reputation and dependency mapping disabled when their external processing is not appropriate. Contact Illek through the published site if you need a report removed before expiry or need to raise a security concern.</p>
+      <p class="dialog-footnote">Last updated 14 August 2026. This notice describes the current open testing implementation. It does not create a promise of a particular provider's retention or availability.</p>
+    </section>
+  </main>
+  <footer>
+    <a class="brand small" href="./"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>RequestScope</span></a>
+    <p>Independent edge request diagnostics.</p>
+  </footer>
+</body>
+</html>

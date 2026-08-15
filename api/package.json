@@ -1,6 +1,6 @@
 {
   "name": "requestscope-api",
-  "version": "1.1.0",
+  "version": "1.4.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,10 +10,10 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260723.1",
+    "@cloudflare/workers-types": "^5.20260814.1",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4",
-    "wrangler": "^4.113.0"
+    "wrangler": "^4.123.0"
   },
   "dependencies": {
     "tldts": "^7.4.9"

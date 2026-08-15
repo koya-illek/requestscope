@@ -1,12 +1,22 @@
 name = "requestscope-api"
 main = "src/index.ts"
 compatibility_date = "2026-07-23"
+workers_dev = false
+preview_urls = false
 
 [vars]
 ENVIRONMENT = "production"
-ALLOWED_ORIGINS = "https://requestscope.illek.ie,https://requestscope.pages.dev,http://localhost:8788,http://127.0.0.1:8788"
+SOURCE_REVISION = "working-tree-2026-08-14"
+ALLOWED_ORIGINS = "https://requestscope.illek.ie,http://localhost:8788,http://127.0.0.1:8788"
 REPORT_RETENTION_DAYS = "14"
 DAILY_SCAN_LIMIT = "15"
+MCP_DAILY_LIMIT = "200"
+REPORT_DAILY_LIMIT = "120"
+WEB_RISK_MONTHLY_LIMIT = "90000"
+PHISHTANK_DAILY_LIMIT = "100"
+PHISHTANK_KEYLESS_ENABLED = "true"
+CLOUDFLARE_FAMILY_DNS_ENABLED = "true"
+CLOUDFLARE_FAMILY_DNS_DAILY_LIMIT = "5000"
 
 [triggers]
 crons = ["17 3 * * *"]
@@ -19,3 +29,12 @@ database_id = "582af539-f646-4aa8-b315-64c6425314ed"
 [observability]
 enabled = true
 head_sampling_rate = 1
+
+[assets]
+directory = "../web"
+binding = "ASSETS"
+run_worker_first = ["/api/*", "/mcp", "/mcp/*"]
+
+[[routes]]
+pattern = "requestscope.illek.ie/*"
+zone_name = "illek.ie"

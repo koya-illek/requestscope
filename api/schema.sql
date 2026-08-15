@@ -21,3 +21,22 @@ CREATE TABLE IF NOT EXISTS rate_limits (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rate_limits_date ON rate_limits(window_date);
+
+CREATE TABLE IF NOT EXISTS provider_usage (
+  provider TEXT NOT NULL,
+  window_key TEXT NOT NULL,
+  request_count INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (provider, window_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_provider_usage_updated_at ON provider_usage(updated_at);
+
+CREATE TABLE IF NOT EXISTS schema_metadata (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+INSERT OR IGNORE INTO schema_metadata (key, value, updated_at)
+VALUES ('schema_version', '1', datetime('now'));

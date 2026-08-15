@@ -1,0 +1,42 @@
+swagger: '2.0'
+info:
+  title: RequestScope MCP
+  description: Full request tracing, DNS and HTTP evidence, dependency mapping, security findings, suspicious-URL risk assessment, and stored-report retrieval. A low risk result is not proof that a URL is safe. Full REST and result schemas are at https://requestscope.illek.ie/openapi.yaml.
+  version: 2.2.0
+host: requestscope.illek.ie
+basePath: /
+schemes:
+  - https
+securityDefinitions:
+  bearerAuth:
+    type: apiKey
+    name: Authorization
+    in: header
+    description: Optional during open testing. Required when COPILOT_API_KEY is configured.
+paths:
+  /mcp/v2:
+    post:
+      summary: Complete RequestScope toolset
+      description: Streamable HTTP MCP endpoint exposing trace_request, assess_url_risk, and get_requestscope_report. Tools publish their input and output JSON Schemas through tools/list.
+      x-ms-agentic-protocol: mcp-streamable-1.0
+      operationId: InvokeRequestScopeMCP
+      security:
+        - {}
+        - bearerAuth: []
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      responses:
+        '200':
+          description: MCP response
+        '202':
+          description: MCP notification accepted
+        '400':
+          description: Invalid JSON-RPC request
+        '401':
+          description: Invalid API credential when configured
+        '415':
+          description: Content-Type must be application/json
+        '429':
+          description: Bounded tool-call request limit reached

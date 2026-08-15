@@ -4,6 +4,8 @@ import {
   InputError,
   isPublicIp,
   normalizeUrl,
+  redactHeaderForStorage,
+  redactTextForStorage,
   redactUrlForStorage,
   safeRedirect,
 } from "../src/security";
@@ -41,6 +43,21 @@ describe("report URL redaction", () => {
 
   it("does not change URLs without query parameters", () => {
     expect(redactUrlForStorage("https://example.com/path")).toBe("https://example.com/path");
+  });
+
+  it("removes fragments and URL-bearing header secrets", () => {
+    const location = redactHeaderForStorage("location", "https://example.com/continue?token=secret#access_token=fragment", new URL("https://example.com"));
+    const csp = redactHeaderForStorage("content-security-policy", "default-src 'self'; report-uri https://collector.example/report?sig=header-secret#fragment");
+    const nel = redactHeaderForStorage("nel", '{"report_to":"x","endpoint":"https://collector.example/report?secret=nel-secret"}');
+    expect(location).not.toContain("secret");
+    expect(location).not.toContain("#");
+    expect(csp).not.toContain("header-secret");
+    expect(csp).not.toContain("#fragment");
+    expect(nel).not.toContain("nel-secret");
+  });
+
+  it("redacts token-shaped values in derived text", () => {
+    expect(redactTextForStorage('fetch("https://cdn.example/app.js?sig=secret"); const token = "js-secret";')).not.toMatch(/secret/);
   });
 });
 

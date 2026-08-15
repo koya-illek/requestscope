@@ -1,0 +1,229 @@
+import { classifyHostname, registrableDomain } from "./classifier";
+import type { ReputationAssessment, ScanReport, UrlRiskAssessment, UrlRiskFinding } from "./types";
+
+const SHORTENERS = new Set([
+  "1url.com", "amzn.to", "bit.do", "bit.ly", "buff.ly", "cutt.ly", "dub.sh", "goo.gl",
+  "is.gd", "lnkd.in", "ow.ly", "rb.gy", "rebrand.ly", "shorturl.at", "t.co", "tiny.cc",
+  "tinyurl.com", "trib.al", "urlz.fr", "youtu.be",
+]);
+
+const BRANDS: Array<{ organisation: string; domains: string[]; aliases: string[] }> = [
+  { organisation: "Microsoft", domains: ["microsoft.com", "microsoftonline.com", "office.com", "live.com"], aliases: ["microsoft", "office", "m365", "outlook"] },
+  { organisation: "Google", domains: ["google.com", "gmail.com"], aliases: ["google", "gmail"] },
+  { organisation: "Apple", domains: ["apple.com", "icloud.com"], aliases: ["apple", "icloud"] },
+  { organisation: "Amazon", domains: ["amazon.com", "amazon.co.uk", "amazon.ie"], aliases: ["amazon", "aws"] },
+  { organisation: "PayPal", domains: ["paypal.com"], aliases: ["paypal"] },
+  { organisation: "Stripe", domains: ["stripe.com"], aliases: ["stripe"] },
+  { organisation: "Meta", domains: ["facebook.com", "instagram.com", "meta.com"], aliases: ["facebook", "instagram", "meta"] },
+  { organisation: "DocuSign", domains: ["docusign.com", "docusign.net"], aliases: ["docusign"] },
+  { organisation: "Dropbox", domains: ["dropbox.com"], aliases: ["dropbox"] },
+  { organisation: "LinkedIn", domains: ["linkedin.com"], aliases: ["linkedin"] },
+  { organisation: "Adobe", domains: ["adobe.com"], aliases: ["adobe", "acrobat"] },
+  { organisation: "Cloudflare", domains: ["cloudflare.com"], aliases: ["cloudflare"] },
+  { organisation: "Revenue Ireland", domains: ["revenue.ie"], aliases: ["revenue"] },
+  { organisation: "Bank of Ireland", domains: ["bankofireland.com", "365online.com"], aliases: ["bankofireland", "boi", "365online"] },
+  { organisation: "AIB", domains: ["aib.ie"], aliases: ["aib"] },
+];
+
+export interface UrlRiskContext {
+  claimedOrganisation?: string;
+  messageContext?: string;
+}
+
+export function assessUrlRisk(
+  report: ScanReport,
+  rawUrl: string,
+  context: UrlRiskContext = {},
+  reputation: ReputationAssessment = {
+    status: "not_requested",
+    detail: "External reputation checks were not requested for this trace.",
+    consentRequired: true,
+    providers: [],
+  },
+): UrlRiskAssessment {
+  const findings: UrlRiskFinding[] = [];
+  const initial = new URL(report.normalizedUrl);
+  const hosts = [...new Set(report.http.hops.map((hop) => hop.hostname.toLowerCase()))];
+  if (!hosts.includes(initial.hostname)) hosts.unshift(initial.hostname);
+  const finalHost = report.finalUrl ? new URL(report.finalUrl).hostname : null;
+  const claimed = context.claimedOrganisation?.trim().slice(0, 120) || null;
+
+  if (SHORTENERS.has(registrableDomain(initial.hostname))) {
+    add(findings, "known-shortener", "medium", 18, "Known URL shortener", "The submitted hostname is a known shortening service, so the destination was hidden until followed.", { hostname: initial.hostname });
+  }
+
+  const registrableHosts = [...new Set(hosts.map(registrableDomain))];
+  if (registrableHosts.length > 1) {
+    add(findings, "cross-domain-redirect", registrableHosts.length > 2 ? "medium" : "low", registrableHosts.length > 2 ? 18 : 10,
+      "Redirect crossed organisational domains", `The trace traversed ${registrableHosts.length} registrable domains.`, { domains: registrableHosts });
+  }
+
+  const rawHost = extractRawHostname(rawUrl);
+  const hasUnicode = /[^\x00-\x7f]/.test(rawHost);
+  const mixedScript = /[a-z]/i.test(rawHost) && /[\u0370-\u03ff\u0400-\u04ff]/u.test(rawHost);
+  if (hosts.some((host) => host.split(".").some((label) => label.startsWith("xn--"))) || hasUnicode) {
+    add(findings, "internationalized-domain", mixedScript ? "high" : "medium", mixedScript ? 35 : 16,
+      mixedScript ? "Mixed-script lookalike risk" : "Internationalized hostname", mixedScript
+        ? "The hostname mixes Latin with Greek or Cyrillic characters, a common visual impersonation technique."
+        : "The hostname contains an internationalized label. Verify how it is displayed before trusting it.",
+      { asciiHostname: initial.hostname, suppliedHostname: rawHost.slice(0, 253), mixedScript }, mixedScript ? "high" : "medium");
+  }
+
+  const encodedCount = (rawUrl.match(/%[0-9a-f]{2}/gi) || []).length;
+  const repeatedEncoding = /%25[0-9a-f]{2}/i.test(rawUrl);
+  const queryCount = initial.searchParams.size;
+  if (repeatedEncoding || encodedCount >= 4 || queryCount >= 8 || rawUrl.length > 300) {
+    add(findings, "unusual-url-structure", "medium", repeatedEncoding ? 18 : 10, "Unusual URL structure",
+      "The submitted URL uses unusually dense encoding, parameters, or length. This can obscure its purpose.",
+      { encodedSequences: encodedCount, repeatedEncoding, queryParameterCount: queryCount, length: rawUrl.length }, "medium");
+  }
+
+  if (initial.hostname.split(".").length >= 5 || initial.hostname.length > 60) {
+    add(findings, "deceptive-hostname-shape", "low", 8, "Complex hostname", "The hostname is unusually long or deeply nested and may be difficult to read accurately.",
+      { hostname: initial.hostname, labels: initial.hostname.split(".").length });
+  }
+
+  const brand = resolveClaimedBrand(claimed);
+  for (const host of registrableHosts) {
+    const candidate = host.split(".")[0].replace(/[^a-z0-9]/g, "");
+    for (const entry of brand ? [brand] : BRANDS) {
+      if (entry.domains.some((domain) => host === domain || host.endsWith(`.${domain}`))) continue;
+      const match = entry.aliases.find((alias) => looksLike(candidate, alias));
+      if (!match) continue;
+      add(findings, "brand-lookalike", "high", brand ? 38 : 32, `Possible ${entry.organisation} lookalike`,
+        `${host} resembles a known ${entry.organisation} name but is not one of its recognised domains.`,
+        { hostname: host, organisation: entry.organisation, expectedDomains: entry.domains, matchedName: match });
+      break;
+    }
+  }
+
+  const signals = report.pageSecuritySignals;
+  if (signals?.externalFormAction) {
+    add(findings, "external-form-action", "high", 30, "Form submits to another site", "A form on the final page submits information to a different hostname.", { finalHostname: finalHost }, "high", "page_observation");
+  }
+  if (signals?.passwordForm) {
+    const suspiciousHost = findings.some((item) => item.code === "brand-lookalike" || item.code === "internationalized-domain");
+    add(findings, "password-form", suspiciousHost ? "high" : "medium", suspiciousHost ? 28 : 14, "Password field observed",
+      "The inspected page contains a password input. This is expected on legitimate login pages but increases impact when combined with deceptive-domain indicators.",
+      { finalHostname: finalHost }, "high", "page_observation");
+  }
+  if (signals && signals.matchedLanguage.length > 0) {
+    const contextMatch = context.messageContext ? matchedContextTerms(context.messageContext) : [];
+    add(findings, "sensitive-action-language", "low", 6, "Sensitive action language observed",
+      `The page contains language associated with ${signals.matchedLanguage.join(", ")}.`,
+      { pageSignals: signals.matchedLanguage, contextSignals: contextMatch }, "medium", "page_observation");
+  }
+
+  if (report.http.finalStatus === null || report.status === "failed") {
+    add(findings, "incomplete-observation", "low", 0, "Destination could not be fully inspected", "A failed or blocked fetch limits the assessment; absence of other findings is not evidence of safety.", { scanStatus: report.status }, "high");
+  }
+
+  for (const provider of reputation.providers.filter((item) => item.status === "matched")) {
+    add(
+      findings,
+      `external-reputation-${provider.provider}-${provider.target}`,
+      "high",
+      60,
+      `${provider.provider === "google_web_risk" ? "Google Web Risk" : provider.provider === "cloudflare_family_dns" ? "Cloudflare malware-filtering DNS" : "PhishTank"} reputation match`,
+      provider.detail,
+      {
+        provider: provider.provider,
+        target: provider.target,
+        hostname: provider.hostname,
+        threatTypes: provider.threatTypes,
+        checkedAt: provider.checkedAt,
+        expiresAt: provider.expiresAt,
+      },
+      "high",
+      "reputation_provider",
+    );
+  }
+
+  const services = hosts.flatMap((hostname) => {
+    const registered = registrableDomain(hostname);
+    const brandMatch = BRANDS.find((entry) => entry.domains.includes(registered));
+    if (brandMatch) return [{ hostname, organisation: brandMatch.organisation, category: "functional" as const }];
+    const match = classifyHostname(hostname);
+    return match.name ? [{ hostname, organisation: match.name, category: match.category }] : [];
+  });
+  const riskScore = Math.min(100, findings.reduce((total, item) => total + item.score, 0));
+  const verdict = riskScore >= 60 ? "high" : riskScore >= 30 ? "medium" : "low";
+  const confidence = report.status === "complete"
+    && !findings.some((item) => item.confidence === "medium")
+    && !["partial", "unavailable"].includes(reputation.status)
+    ? "high"
+    : "medium";
+  return {
+    schemaVersion: 1,
+    verdict,
+    riskScore,
+    confidence,
+    summary: reputation.status === "matched"
+      ? "An external reputation provider identifies a checked URL as potentially unsafe. Avoid visiting it or entering information until it is independently verified."
+      : verdict === "low"
+        ? "No strong risk indicators were found; this does not prove the URL is safe."
+        : `${verdict === "high" ? "Strong" : "Some"} risk indicators were observed. Review the evidence before visiting or entering information.`,
+    requestedUrl: report.requestedUrl,
+    finalUrl: report.finalUrl,
+    traceId: report.id,
+    reportPath: `/api/scans/${report.id}`,
+    claimedOrganisation: claimed,
+    services,
+    findings,
+    reputation,
+    limitations: [
+      "A low rating means no strong indicators were observed, not that the URL is safe.",
+      "Page signals come from bounded static HTML and do not include browser-executed content.",
+      reputation.status === "not_requested"
+        ? "External reputation was not requested for this assessment."
+        : "A provider not listing a URL is not proof that the URL is safe.",
+    ],
+  };
+}
+
+function add(findings: UrlRiskFinding[], code: string, severity: UrlRiskFinding["severity"], score: number, title: string,
+  detail: string, evidence: Record<string, unknown>, confidence: UrlRiskFinding["confidence"] = "high",
+  source: UrlRiskFinding["source"] = "requestscope"): void {
+  findings.push({ code, severity, score, title, detail, evidence, confidence, source });
+}
+
+function resolveClaimedBrand(claimed: string | null) {
+  if (!claimed) return null;
+  const normalized = claimed.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return BRANDS.find((entry) => entry.organisation.toLowerCase().replace(/[^a-z0-9]/g, "") === normalized || entry.aliases.includes(normalized)) || null;
+}
+
+function looksLike(candidate: string, brand: string): boolean {
+  if (candidate === brand) return true;
+  if (candidate.length < 4 || brand.length < 4 || Math.abs(candidate.length - brand.length) > 1) return false;
+  return editDistance(candidate, brand) <= 1;
+}
+
+function editDistance(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i += 1) {
+    let previous = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const saved = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, previous + (a[i - 1] === b[j - 1] ? 0 : 1));
+      previous = saved;
+    }
+  }
+  return row[b.length];
+}
+
+function extractRawHostname(rawUrl: string): string {
+  const value = rawUrl.trim().replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
+  return (value.split(/[/?#]/, 1)[0] || "").replace(/^.*@/, "").replace(/:\d+$/, "").toLowerCase();
+}
+
+function matchedContextTerms(context: string): string[] {
+  const lower = context.slice(0, 1000).toLowerCase();
+  return [
+    ["login", /\b(?:log[ -]?in|sign[ -]?in)\b/],
+    ["verification", /\bverif(?:y|ication)\b/],
+    ["password-reset", /\b(?:reset|expired|change) (?:your )?password\b/],
+    ["payment", /\b(?:payment|invoice|billing|credit card)\b/],
+  ].filter(([, pattern]) => (pattern as RegExp).test(lower)).map(([name]) => name as string);
+}

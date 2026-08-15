@@ -1,0 +1,79 @@
+import { queryDns } from "./dns";
+import { RequestBudget, BudgetExceededError, type BudgetFetchInit } from "./budget";
+import {
+  BlockedTargetError,
+  isIpLiteral,
+  isValidHostname,
+  isPublicIp,
+  normalizeUrl,
+  safeRedirect,
+} from "./security";
+import type { DnsQueryResult } from "./types";
+
+const MAX_DERIVED_REDIRECTS = 3;
+
+export interface PublicResolution {
+  hostname: string;
+  addresses: string[];
+  queries: DnsQueryResult[];
+}
+
+/** Resolve a hostname through both configured public resolvers and fail closed. */
+export async function assertPublicTarget(hostname: string, budget?: RequestBudget): Promise<PublicResolution> {
+  const normalized = hostname.toLowerCase().replace(/\.$/, "");
+  if (!normalized || normalized.includes("/") || normalized.includes(":") || isIpLiteral(normalized) || !isValidHostname(normalized)) {
+    throw new BlockedTargetError("The derived target is not a public hostname.");
+  }
+  const [cloudflare, google] = await Promise.all([
+    Promise.all([queryDns(normalized, "A", "cloudflare", budget), queryDns(normalized, "AAAA", "cloudflare", budget)]),
+    Promise.all([queryDns(normalized, "A", "google", budget), queryDns(normalized, "AAAA", "google", budget)]),
+  ]);
+  const queries = [...cloudflare, ...google];
+  assertResolutionHealthy(normalized, queries);
+  const addresses = uniqueAddresses(queries);
+  const blocked = addresses.filter((address) => !isPublicIp(address));
+  if (blocked.length) throw new BlockedTargetError("The hostname resolves to a private or reserved network address.");
+  return { hostname: normalized, addresses, queries };
+}
+
+/** Validate the original hostname and the final target of each manual redirect. */
+export async function fetchPublicUrl(
+  input: string | URL,
+  budget: RequestBudget,
+  init: BudgetFetchInit = {},
+  maxRedirects = MAX_DERIVED_REDIRECTS,
+): Promise<{ response: Response; url: URL; redirects: number }> {
+  let current = normalizeUrl(input.toString());
+  await assertPublicTarget(current.hostname, budget);
+  for (let redirects = 0; redirects <= maxRedirects; redirects += 1) {
+    const response = await budget.fetch(current.toString(), { ...init, redirect: "manual" });
+    const location = response.headers.get("location");
+    if (!location || ![301, 302, 303, 307, 308].includes(response.status)) {
+      return { response, url: current, redirects };
+    }
+    if (redirects === maxRedirects) {
+      response.body?.cancel();
+      throw new BlockedTargetError(`Derived redirect limit of ${maxRedirects} reached.`);
+    }
+    const next = safeRedirect(current, location);
+    await assertPublicTarget(next.hostname, budget);
+    response.body?.cancel();
+    current = next;
+  }
+  throw new BlockedTargetError("Derived redirect could not be validated.");
+}
+
+export function assertResolutionHealthy(hostname: string, queries: DnsQueryResult[]): void {
+  const failures = queries.filter((query) => query.status < 0 || Boolean(query.error));
+  if (failures.length) throw new BlockedTargetError(`Public DNS resolution for ${hostname} was inconclusive.`);
+  const addresses = uniqueAddresses(queries);
+  if (!addresses.length) throw new BlockedTargetError(`No public A or AAAA address could be confirmed for ${hostname}.`);
+}
+
+export function uniqueAddresses(queries: DnsQueryResult[]): string[] {
+  return [...new Set(queries.flatMap((query) => query.answers
+    .filter((answer) => answer.type === "A" || answer.type === "AAAA")
+    .map((answer) => answer.data)))];
+}
+
+export { BudgetExceededError };

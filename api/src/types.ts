@@ -59,6 +59,63 @@ export interface Finding {
   evidenceKind: "derived_finding";
 }
 
+export interface PageSecuritySignals {
+  passwordForm: boolean;
+  forms: number;
+  externalFormAction: boolean;
+  matchedLanguage: Array<"login" | "verification" | "password-reset" | "payment">;
+}
+
+export interface UrlRiskFinding {
+  code: string;
+  severity: "low" | "medium" | "high";
+  score: number;
+  title: string;
+  detail: string;
+  evidence: Record<string, unknown>;
+  confidence: "high" | "medium";
+  source: "requestscope" | "page_observation" | "reputation_provider";
+}
+
+export type ReputationProviderName = "google_web_risk" | "phishtank" | "cloudflare_family_dns";
+
+export interface ReputationProviderResult {
+  provider: ReputationProviderName;
+  target: "requested" | "final";
+  hostname: string;
+  status: "matched" | "not_listed" | "inconclusive" | "unavailable" | "quota_limited" | "not_configured";
+  threatTypes: string[];
+  detail: string;
+  checkedAt: string;
+  expiresAt: string | null;
+  advisoryUrl: string;
+  attribution: string;
+}
+
+export interface ReputationAssessment {
+  status: "matched" | "not_listed" | "partial" | "unavailable" | "not_configured" | "not_requested";
+  detail: string;
+  consentRequired: true;
+  providers: ReputationProviderResult[];
+}
+
+export interface UrlRiskAssessment {
+  schemaVersion: 1;
+  verdict: "low" | "medium" | "high";
+  riskScore: number;
+  confidence: "high" | "medium";
+  summary: string;
+  requestedUrl: string;
+  finalUrl: string | null;
+  traceId: string;
+  reportPath: string;
+  claimedOrganisation: string | null;
+  services: Array<{ hostname: string; organisation: string; category: DomainCategory }>;
+  findings: UrlRiskFinding[];
+  reputation: ReputationAssessment;
+  limitations: string[];
+}
+
 export type DomainCategory =
   | "functional"
   | "analytics"
@@ -96,6 +153,7 @@ export interface SdkDetection {
 }
 
 export interface SslDetail {
+  source: "certificate_transparency";
   protocol: string | null;
   cipher: string | null;
   issuer: string | null;
@@ -104,6 +162,43 @@ export interface SslDetail {
   validTo: string | null;
   daysUntilExpiry: number | null;
   authorityKeyIdentifier: string | null;
+}
+
+export type CoverageStatus = "complete" | "partial" | "failed" | "unavailable" | "skipped";
+
+export interface PhaseCoverage {
+  status: CoverageStatus;
+  attempted: number;
+  successful: number;
+  failed: number;
+  skipped: number;
+  bytesInspected: number;
+  truncated: boolean;
+  durationMs: number;
+  detail?: string;
+}
+
+export interface ScanCoverage {
+  status: CoverageStatus;
+  budget: {
+    maxSubrequests: number;
+    subrequestsStarted: number;
+    subrequestsSucceeded: number;
+    subrequestsFailed: number;
+    maxBodyBytes: number;
+    bodyBytesInspected: number;
+    maxConcurrent: number;
+    peakConcurrent: number;
+    deadlineMs: number;
+    elapsedMs: number;
+    exhausted: boolean;
+    exhaustionReason?: string;
+  };
+  phases: {
+    core: PhaseCoverage;
+    dependencies: PhaseCoverage;
+    reputation: PhaseCoverage;
+  };
 }
 
 export interface SubdomainTakeoverCheck {
@@ -128,15 +223,26 @@ export interface CspAnalysis {
 }
 
 export interface JsBundleAnalysis {
+  attempted: number;
+  successful: number;
+  failed: number;
+  skipped: number;
   bundlesFetched: number;
   totalBytes: number;
+  truncated: boolean;
   domains: string[];
   patterns: Array<{ domain: string; pattern: string; context: string }>;
 }
 
 export interface CertTransparencyAnalysis {
+  attempted?: number;
+  successful?: number;
+  failed?: number;
+  skipped?: number;
   subdomains: string[];
   total: number;
+  truncated?: boolean;
+  latest?: { notBefore: string; notAfter: string };
   error?: string;
 }
 
@@ -158,6 +264,7 @@ export interface DependencyMap {
     piiRisk: number;
     postAuthOnly: number;
   };
+  coverage?: PhaseCoverage;
 }
 
 export interface ScanReport {
@@ -176,6 +283,7 @@ export interface ScanReport {
     colo?: string;
     country?: string;
     disclaimer: string;
+    sourceRevision?: string;
   };
   dns: {
     queries: DnsQueryResult[];
@@ -189,6 +297,7 @@ export interface ScanReport {
     contentBytesInspected: number;
     truncated: boolean;
   };
+  pageSecuritySignals?: PageSecuritySignals;
   dependencies: {
     total: number;
     firstParty: number;
@@ -197,6 +306,14 @@ export interface ScanReport {
     items: Dependency[];
   };
   dependencyMap?: DependencyMap;
+  urlRisk?: UrlRiskAssessment;
+  coverage?: ScanCoverage;
+  provenance?: {
+    apiVersion: string;
+    sourceRevision: string;
+    reportSchemaVersion: number;
+    databaseSchemaVersion: number;
+  };
   findings: Finding[];
   summary: {
     critical: number;
@@ -206,21 +323,22 @@ export interface ScanReport {
   };
 }
 
-export interface SslDetail {
-  protocol: string | null;
-  cipher: string | null;
-  issuer: string | null;
-  subject: string | null;
-  validFrom: string | null;
-  validTo: string | null;
-  daysUntilExpiry: number | null;
-  authorityKeyIdentifier: string | null;
-}
-
 export interface Env {
   DB: D1Database;
   ALLOWED_ORIGINS: string;
   REPORT_RETENTION_DAYS: string;
   DAILY_SCAN_LIMIT: string;
+  MCP_DAILY_LIMIT: string;
+  REPORT_DAILY_LIMIT: string;
   ENVIRONMENT: string;
+  SOURCE_REVISION?: string;
+  RATE_LIMIT_BYPASS_IPS?: string;
+  COPILOT_API_KEY?: string;
+  GOOGLE_WEB_RISK_API_KEY?: string;
+  PHISHTANK_APP_KEY?: string;
+  PHISHTANK_KEYLESS_ENABLED?: string;
+  CLOUDFLARE_FAMILY_DNS_ENABLED?: string;
+  WEB_RISK_MONTHLY_LIMIT?: string;
+  PHISHTANK_DAILY_LIMIT?: string;
+  CLOUDFLARE_FAMILY_DNS_DAILY_LIMIT?: string;
 }

@@ -1,6 +1,6 @@
 {
   "name": "requestscope",
-  "version": "1.1.0",
+  "version": "1.4.0",
   "private": true,
   "workspaces": [
     "api"
@@ -8,8 +8,13 @@
   "scripts": {
     "dev": "npm --workspace api run dev",
     "test": "node --test scripts/static.test.mjs && npm --workspace api test",
+    "test:browser": "node scripts/browser.test.mjs",
     "typecheck": "npm --workspace api run typecheck",
     "deploy:api": "npm --workspace api run deploy",
-    "deploy:web": "wrangler pages deploy web --project-name requestscope"
+    "deploy:web": "npm --workspace api run deploy"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "playwright": "^1.62.1"
   }
 }

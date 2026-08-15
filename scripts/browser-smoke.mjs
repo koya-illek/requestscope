@@ -1,5 +1,5 @@
 const endpoint = process.env.CDP_ENDPOINT || "http://127.0.0.1:9223";
-const targetUrl = process.argv[2] || "https://requestscope.pages.dev/";
+const targetUrl = process.argv[2] || "https://requestscope.illek.ie/";
 const targets = await fetch(`${endpoint}/json/list`).then((response) => response.json());
 const target = targets.find((item) => item.type === "page");
 if (!target) throw new Error("No Chromium page target found");

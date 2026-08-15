@@ -97,6 +97,7 @@ describe("mapDependencies", () => {
         return Response.json([
           { name_value: "api.example.com" },
           { name_value: "www.example.com" },
+          { name_value: "evil-example.com" },
           { name_value: "*.example.com" },
           { name_value: "staging.example.com\nadmin.example.com" },
         ]);
@@ -116,6 +117,7 @@ describe("mapDependencies", () => {
     expect(result.sources.certTransparency.subdomains).toContain("www.example.com");
     expect(result.sources.certTransparency.subdomains).toContain("staging.example.com");
     expect(result.sources.certTransparency.subdomains).toContain("admin.example.com");
+    expect(result.sources.certTransparency.subdomains).not.toContain("evil-example.com");
   });
 
   it("handles missing CSP gracefully", async () => {

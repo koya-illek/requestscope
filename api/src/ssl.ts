@@ -66,7 +66,7 @@ export async function inspectSsl(
 
   // --- 3. Calculate days until expiry ---
   let daysUntilExpiry: number | null = null;
-  if (validTo) {
+  if (fetchResponse && validTo) {
     const expiry = new Date(validTo);
     if (!Number.isNaN(expiry.getTime())) {
       daysUntilExpiry = Math.ceil(
@@ -76,6 +76,7 @@ export async function inspectSsl(
   }
 
   return {
+    source: "certificate_transparency",
     protocol,
     cipher,
     issuer,

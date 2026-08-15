@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#07100e"/>
+  <g opacity=".15" stroke="#8fdcbb"><path d="M0 90h1200M0 180h1200M0 270h1200M0 360h1200M0 450h1200M0 540h1200"/><path d="M120 0v630M240 0v630M360 0v630M480 0v630M600 0v630M720 0v630M840 0v630M960 0v630M1080 0v630"/></g>
+  <path d="M80 474C245 474 222 342 376 342s128 156 287 156 142-118 276-118 114 70 181 70" fill="none" stroke="#59f0a7" stroke-width="7" stroke-dasharray="18 18"/>
+  <circle cx="80" cy="474" r="12" fill="#59f0a7"/><circle cx="376" cy="342" r="12" fill="#59f0a7"/><circle cx="663" cy="498" r="12" fill="#59f0a7"/><circle cx="939" cy="380" r="12" fill="#59f0a7"/><circle cx="1120" cy="450" r="12" fill="#59f0a7"/>
+  <text x="72" y="105" fill="#edf8f2" font-family="Arial, sans-serif" font-size="31" font-weight="700">Request<tspan fill="#59f0a7">Scope</tspan></text>
+  <text x="72" y="255" fill="#edf8f2" font-family="Arial, sans-serif" font-size="68" font-weight="700">See the journey</text>
+  <text x="72" y="332" fill="#59f0a7" font-family="Arial, sans-serif" font-size="68">behind a URL.</text>
+  <text x="76" y="405" fill="#9fb8ad" font-family="Arial, sans-serif" font-size="26">DNS, redirects, HTTP, resources and URL risk</text>
+</svg>

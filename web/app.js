@@ -4,16 +4,21 @@
   const API_BASE = (window.REQUESTSCOPE_CONFIG?.API_BASE || "").replace(/\/$/, "");
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
-  const state = { report: null, progressStep: 0 };
+  const state = { report: null, progressStep: 0, routeStep: 0, progressStages: [], rawUrl: null };
 
   const form = $("#trace-form");
   const input = $("#url-input");
   const traceButton = $("#trace-button");
   const mapDepsCheckbox = $("#map-deps");
+  const externalReputationCheckbox = $("#external-reputation");
+  const claimedOrganisation = $("#claimed-organisation");
+  const messageContext = $("#message-context");
   const progressPanel = $("#progress-panel");
   const errorPanel = $("#error-panel");
   const reportPanel = $("#report");
   const methodDialog = $("#method-dialog");
+
+  configureProviderAvailability();
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -24,6 +29,7 @@
   $("#error-close").addEventListener("click", () => errorPanel.classList.add("hidden"));
   $("#copy-link").addEventListener("click", copyShareLink);
   $("#export-json").addEventListener("click", exportJson);
+  $("#cloudflare-scan").addEventListener("click", openCloudflareScan);
   $("#method-button").addEventListener("click", () => methodDialog.showModal());
   $("#footer-method-button").addEventListener("click", () => methodDialog.showModal());
   $("#dialog-close").addEventListener("click", () => methodDialog.close());
@@ -34,8 +40,25 @@
     $$(".filter").forEach((item) => item.classList.toggle("active", item === button));
     renderDependencies(button.dataset.filter);
   }));
+
+  async function configureProviderAvailability() {
+    try {
+      const response = await fetch(`${API_BASE}/api/health`, { headers: { Accept: "application/json" } });
+      if (!response.ok) return;
+      const health = await response.json();
+      const configured = Object.entries(health.reputationProviders || {}).filter(([, enabled]) => enabled).map(([name]) => name);
+      if (configured.length === 0) {
+        externalReputationCheckbox.disabled = true;
+        $("#reputation-toggle-text strong").textContent = "External reputation unavailable";
+        $("#reputation-toggle-text small").textContent = "Provider credentials are not configured on this deployment.";
+      }
+    } catch {
+      // A health-check failure must not prevent the core trace UI from loading.
+    }
+  }
   async function runTrace(url) {
     if (!url.trim()) return;
+    state.rawUrl = url.trim();
     beginProgress();
     errorPanel.classList.add("hidden");
     reportPanel.classList.add("hidden");
@@ -45,7 +68,13 @@
       const response = await fetch(`${API_BASE}/api/scans/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim(), mapDependencies: mapDepsCheckbox.checked })
+        body: JSON.stringify({
+          url: url.trim(),
+          mapDependencies: mapDepsCheckbox.checked,
+          externalReputation: externalReputationCheckbox.checked,
+          claimedOrganisation: claimedOrganisation.value.trim() || undefined,
+          messageContext: messageContext.value.trim() || undefined
+        })
       });
       if (!response.ok || !response.body) throw new Error(`Trace failed with HTTP ${response.status}`);
       const payload = await readTraceStream(response);
@@ -60,6 +89,7 @@
   }
 
   async function loadReport(id) {
+    state.rawUrl = null;
     beginProgress("Loading saved report");
     try {
       const response = await fetch(`${API_BASE}/api/scans/${encodeURIComponent(id)}`);
@@ -75,14 +105,18 @@
 
   function beginProgress(title = "Tracing request path") {
     state.progressStep = 0;
+    state.routeStep = 0;
+    state.progressStages = [
+      { key: "input", label: "Validate target" },
+      { key: "dns", label: "Resolve DNS" },
+      { key: "edge", label: "Follow redirects" },
+      { key: "page", label: "Inspect page" },
+      ...(mapDepsCheckbox.checked ? [{ key: "deps", label: "Map dependencies" }] : []),
+      ...(externalReputationCheckbox.checked ? [{ key: "reputation", label: "Check reputation" }] : []),
+      { key: "report", label: "Build report" }
+    ];
     const stepsEl = $("#progress-steps");
-    if (mapDepsCheckbox.checked && stepsEl.children.length === 5) {
-      const li = document.createElement("li");
-      li.textContent = "Map dependencies";
-      stepsEl.appendChild(li);
-    } else if (!mapDepsCheckbox.checked && stepsEl.children.length === 6) {
-      stepsEl.lastChild.remove();
-    }
+    stepsEl.innerHTML = state.progressStages.map((step) => `<li>${escapeHtml(step.label)}</li>`).join("");
     $("#progress-title").textContent = title;
     progressPanel.classList.remove("hidden");
     $("#progress-bar").style.width = "8%";
@@ -96,17 +130,21 @@
       item.classList.toggle("done", index < state.progressStep);
     });
     $$("#live-route .route-node").forEach((item, index) => {
-      item.classList.toggle("active", index === state.progressStep);
-      item.classList.toggle("done", index < state.progressStep);
+      const skipped = (item.dataset.optional === "dependencies" && !mapDepsCheckbox.checked)
+        || (item.dataset.optional === "reputation" && !externalReputationCheckbox.checked);
+      item.classList.toggle("skipped", skipped);
+      item.classList.toggle("active", !skipped && index === state.routeStep);
+      item.classList.toggle("done", !skipped && index < state.routeStep);
     });
     $$("#live-route .route-wire").forEach((item, index) => {
-      item.classList.toggle("active", index === state.progressStep - 1 || (state.progressStep === 0 && index === 0));
-      item.classList.toggle("done", index < state.progressStep - 1);
+      item.classList.toggle("active", index === state.routeStep - 1 || (state.routeStep === 0 && index === 0));
+      item.classList.toggle("done", index < state.routeStep - 1);
     });
   }
 
   function finishProgress() {
-    state.progressStep = mapDepsCheckbox.checked ? 5 : 4;
+    state.progressStep = state.progressStages.length - 1;
+    state.routeStep = 6;
     updateProgressSteps();
     $("#progress-bar").style.width = "100%";
     setTimeout(() => progressPanel.classList.add("hidden"), 250);
@@ -128,8 +166,13 @@
     $("#report-url").textContent = report.finalUrl || report.normalizedUrl;
     $("#report-url").href = report.finalUrl || report.normalizedUrl;
     const vantage = [report.observation.colo, report.observation.country].filter(Boolean).join(", ");
-    $("#observation-note").textContent = `${report.observation.disclaimer}${vantage ? ` This trace executed through ${vantage}.` : ""}`;
+    const coverage = report.coverage;
+    const coverageText = coverage
+      ? ` Coverage: core ${coverage.phases.core.status}, dependency map ${coverage.phases.dependencies.status}, reputation ${coverage.phases.reputation.status}.`
+      : "";
+    $("#observation-note").textContent = `${report.observation.disclaimer}${vantage ? ` This trace executed through ${vantage}.` : ""}${coverageText}`;
     renderMetrics(report);
+    renderUrlRisk(report.urlRisk);
     renderTimeline(report.http.hops);
     renderDns(report.dns.queries);
     renderFindings(report.findings);
@@ -139,17 +182,17 @@
     renderDepMap(report.dependencyMap);
     reportPanel.classList.remove("hidden");
     if (updateLocation) history.pushState({ reportId: report.id }, "", `#${report.id}`);
-    document.title = `${report.hostname} — RequestScope`;
+    document.title = `${report.hostname}: RequestScope`;
     setTimeout(() => reportPanel.scrollIntoView({ behavior: "smooth", block: "start" }), 280);
   }
 
   function renderMetrics(report) {
-    const finalStatus = report.http.finalStatus ?? "—";
+    const finalStatus = report.http.finalStatus ?? "Unavailable";
     const statusClass = Number(finalStatus) >= 200 && Number(finalStatus) < 400 ? "good" : "warn";
     const redirectCount = report.http.hops.filter((hop) => [301, 302, 303, 307, 308].includes(hop.status) && hop.location).length;
     const metrics = [
       ["Final status", finalStatus, statusClass],
-      ["Total edge time", formatMs(report.totalDurationMs), ""],
+      ["Total trace time", formatMs(report.totalDurationMs), ""],
       ["Redirects", redirectCount, redirectCount <= 2 ? "good" : "warn"],
       ["DNS addresses", report.dns.addresses.length, report.dns.addresses.length ? "good" : "warn"],
       ["HTML references", report.dependencies.total, ""]
@@ -157,6 +200,51 @@
     $("#metrics").innerHTML = metrics.map(([label, value, cls]) =>
       `<div class="metric"><small>${escapeHtml(label)}</small><strong class="${cls}">${escapeHtml(String(value))}</strong></div>`
     ).join("");
+  }
+
+  function renderUrlRisk(risk) {
+    const panel = $("#risk-panel");
+    if (!risk) {
+      panel.classList.add("hidden");
+      return;
+    }
+    panel.classList.remove("hidden");
+    const verdict = $("#risk-verdict");
+    verdict.textContent = `${risk.verdict.toUpperCase()} · ${risk.riskScore}/100`;
+    verdict.className = `risk-verdict ${risk.verdict}`;
+    $("#risk-summary").innerHTML = `<strong>${escapeHtml(risk.summary)}</strong><span>${escapeHtml(risk.confidence)} confidence · ${risk.findings.length} evidence item${risk.findings.length === 1 ? "" : "s"}</span>`;
+    renderReputation(risk.reputation);
+    $("#risk-findings").innerHTML = risk.findings.length
+      ? risk.findings.map((item) => `<article class="risk-finding ${item.severity}">
+          <span>${escapeHtml(item.severity.toUpperCase())}</span>
+          <div><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.detail)}</p><code>${escapeHtml(item.code)} · ${escapeHtml(item.source)} · +${item.score}</code></div>
+        </article>`).join("")
+      : `<p class="dns-empty">No strong risk indicators were observed.</p>`;
+    $("#risk-boundary").textContent = risk.limitations.join(" ");
+  }
+
+  function renderReputation(reputation) {
+    const target = $("#reputation-results");
+    if (!reputation) {
+      target.innerHTML = "";
+      return;
+    }
+    const providers = reputation.providers || [];
+    target.innerHTML = `<div class="reputation-head"><strong>External reputation</strong><span class="reputation-status ${escapeAttr(reputation.status)}">${escapeHtml(reputation.status.replaceAll("_", " ").toUpperCase())}</span></div>
+      <p>${escapeHtml(reputation.detail)}</p>` + (providers.length
+        ? `<div class="provider-list">${providers.map((provider) => `<article class="provider-result ${escapeAttr(provider.status)}">
+            <div><strong>${escapeHtml(providerName(provider.provider))}</strong><span>${escapeHtml(provider.target)} · ${escapeHtml(provider.hostname)}</span></div>
+            <p>${escapeHtml(provider.detail)}</p>
+            ${provider.status === "matched" ? `<a href="${escapeAttr(provider.advisoryUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(provider.attribution)}</a>` : ""}
+          </article>`).join("")}</div>`
+        : "");
+  }
+
+  function providerName(provider) {
+    if (provider === "google_web_risk") return "Google Web Risk";
+    if (provider === "cloudflare_family_dns") return "Cloudflare malware-filtering DNS";
+    if (provider === "phishtank") return "PhishTank";
+    return "External reputation provider";
   }
 
   function renderTimeline(hops) {
@@ -238,14 +326,26 @@
     anchor.click();
   }
 
+  function openCloudflareScan() {
+    if (!state.report) return;
+    const target = state.rawUrl || state.report.finalUrl || state.report.normalizedUrl;
+    const approved = confirm("Cloudflare retains URL Scanner reports and may make them public. Do not continue with authenticated, private, password-reset, or token-bearing URLs. Open Cloudflare's public scanner with this URL?");
+    if (!approved) return;
+    window.open(`https://radar.cloudflare.com/scan?url=${encodeURIComponent(target)}`, "_blank", "noopener,noreferrer");
+  }
+
   function reset() {
     state.report = null;
+    state.rawUrl = null;
     reportPanel.classList.add("hidden");
     errorPanel.classList.add("hidden");
     $("#dep-map-panel").classList.add("hidden");
     history.pushState({}, "", location.pathname);
-    document.title = "RequestScope — See the journey behind a URL";
+    document.title = "RequestScope: See the journey behind a URL";
     input.value = "";
+    claimedOrganisation.value = "";
+    messageContext.value = "";
+    externalReputationCheckbox.checked = false;
     updateQueryWarning();
     input.focus();
     scrollTo({ top: 0, behavior: "smooth" });
@@ -293,16 +393,17 @@
   }
 
   function applyProgress(event) {
-    const stageMap = { accepted: 0, validated: 0, dns: 1, hop: 2, response: 3, complete: mapDepsCheckbox.checked ? 5 : 4 };
-    // Deps stages map to step 4 ("Map dependencies")
-    if (event.stage.startsWith("deps-")) {
-      state.progressStep = 4;
-    } else {
-      state.progressStep = stageMap[event.stage] ?? state.progressStep;
-    }
+    const stageKey = event.stage.startsWith("deps-") ? "deps" : ({
+      accepted: "input", validated: "input", dns: "dns", hop: "edge",
+      response: "page", reputation: "reputation", complete: "report"
+    })[event.stage];
+    const progressIndex = state.progressStages.findIndex((step) => step.key === stageKey);
+    if (progressIndex >= 0) state.progressStep = progressIndex;
+    const routeIndex = ["input", "dns", "edge", "page", "deps", "reputation", "report"].indexOf(stageKey);
+    if (routeIndex >= 0) state.routeStep = routeIndex;
     $("#progress-title").textContent = event.message || "Tracing request path";
-    const stepCount = mapDepsCheckbox.checked ? 5 : 4;
-    $("#progress-bar").style.width = `${18 + (state.progressStep / stepCount) * 75}%`;
+    const finalStep = Math.max(1, state.progressStages.length - 1);
+    $("#progress-bar").style.width = `${8 + (state.progressStep / finalStep) * 85}%`;
     updateProgressSteps();
   }
 
@@ -331,8 +432,8 @@
     const cats = depMap.summary.byCategory || {};
     $("#dep-map-summary").innerHTML = [
       ["Total domains", depMap.summary.totalDomains, ""],
-      ["PII risk", depMap.summary.piiRisk, depMap.summary.piiRisk > 0 ? "warn" : "good"],
-      ["Post-auth only", depMap.summary.postAuthOnly, ""],
+      ["Possible data-bearing services", depMap.summary.piiRisk, depMap.summary.piiRisk > 0 ? "warn" : "good"],
+      ["Not observed in initial HTML", depMap.summary.postAuthOnly, ""],
       ["Analytics", cats.analytics || 0, ""],
       ["Advertising", cats.advertising || 0, ""],
       ["Payment", cats.payment || 0, ""],
@@ -341,7 +442,7 @@
       `<span><strong class="${cls}">${escapeHtml(String(value))}</strong> ${escapeHtml(label)}</span>`
     ).join("");
 
-    // SSL / TLS
+    // Certificate Transparency history, not a live TLS handshake
     renderSsl(depMap.ssl);
 
     // SDKs
@@ -362,8 +463,8 @@
     // JS bundles
     const js = depMap.sources.jsBundles;
     $("#dep-js").innerHTML = js.bundlesFetched === 0
-      ? `<p class="dns-empty">No external JavaScript bundles found.</p>`
-      : `<p class="dep-meta">Scanned <strong>${js.bundlesFetched}</strong> bundle${js.bundlesFetched === 1 ? "" : "s"}, found <strong>${js.domains.length}</strong> domain${js.domains.length === 1 ? "" : "s"}.</p>` +
+      ? `<p class="dns-empty">No external JavaScript bundles were inspected. The phase may have been skipped by the request budget.</p>`
+      : `<p class="dep-meta">Inspected <strong>${js.successful ?? js.bundlesFetched}</strong> of <strong>${js.attempted ?? js.bundlesFetched}</strong> bundle${(js.attempted ?? js.bundlesFetched) === 1 ? "" : "s"}, found <strong>${js.domains.length}</strong> domain${js.domains.length === 1 ? "" : "s"}. ${js.truncated ? "Inspection was truncated." : ""}</p>` +
         (js.domains.length ? `<div class="dep-tag-list">${js.domains.map(d => `<span class="dep-tag">${escapeHtml(d)}</span>`).join("")}</div>` : "");
 
     // Cert Transparency
@@ -372,7 +473,7 @@
       ? `<p class="dns-empty">Error: ${escapeHtml(ct.error)}</p>`
       : ct.subdomains.length === 0
         ? `<p class="dns-empty">No subdomains found.</p>`
-        : `<p class="dep-meta">Found <strong>${ct.total}</strong> subdomain${ct.total === 1 ? "" : "s"}.</p>` +
+        : `<p class="dep-meta">Found <strong>${ct.total}</strong> historical certificate name${ct.total === 1 ? "" : "s"}. This is Certificate Transparency history, not proof of a live service.</p>` +
           `<div class="dep-tag-list">${ct.subdomains.slice(0, 30).map(s => `<span class="dep-tag">${escapeHtml(s)}</span>`).join("")}${ct.total > 30 ? `<span class="dep-tag dep-tag-more">+${ct.total - 30} more</span>` : ""}</div>`;
 
     // Domains table
@@ -380,8 +481,8 @@
     $("#dep-map-domains").innerHTML = domains.length ? domains.map(d => {
       const svc = d.serviceName ? `<span class="dep-svc">${escapeHtml(d.serviceName)}</span>` : "";
       const flags = [
-        d.piiRisk ? `<span class="dep-flag dep-flag-pii" title="Likely transmits PII">PII</span>` : "",
-        d.postAuthOnly ? `<span class="dep-flag dep-flag-auth" title="Only visible after authentication">POST-AUTH</span>` : "",
+        d.piiRisk ? `<span class="dep-flag dep-flag-pii" title="Hostname category suggests a possible data-bearing service">POSSIBLE DATA</span>` : "",
+        d.postAuthOnly ? `<span class="dep-flag dep-flag-auth" title="Not observed in the initial HTML; dynamic visibility was not measured">NOT IN INITIAL HTML</span>` : "",
       ].filter(Boolean).join("");
       return `<div class="dep-domain">
         <span class="dep-cat dep-cat-${escapeHtml(d.category)}">${escapeHtml(d.category)}</span>
@@ -398,20 +499,15 @@
 
   function renderSsl(ssl) {
     if (!ssl) {
-      $("#dep-ssl").innerHTML = `<p class="dns-empty">SSL data unavailable.</p>`;
+      $("#dep-ssl").innerHTML = `<p class="dns-empty">Certificate Transparency history unavailable.</p>`;
       return;
     }
-    const expiry = ssl.daysUntilExpiry;
-    const expiryClass = expiry === null ? "" : expiry < 0 ? "warn" : expiry < 30 ? "warn" : "good";
-    const expiryText = expiry === null ? "Unknown" : expiry < 0 ? `EXPIRED ${Math.abs(expiry)}d ago` : `${expiry} days`;
     const rows = [
-      ["Protocol", ssl.protocol || "Unknown"],
-      ["Cipher", ssl.cipher || "Unknown"],
-      ["Issuer", ssl.issuer || "Unknown"],
-      ["Subject", ssl.subject || "Unknown"],
-      ["Valid from", ssl.validFrom ? ssl.validFrom.slice(0, 10) : "Unknown"],
-      ["Valid to", ssl.validTo ? ssl.validTo.slice(0, 10) : "Unknown"],
-      ["Days to expiry", expiryText, expiryClass],
+      ["Source", "Certificate Transparency"],
+      ["Historical first seen", ssl.validFrom ? ssl.validFrom.slice(0, 10) : "Unknown"],
+      ["Historical last seen", ssl.validTo ? ssl.validTo.slice(0, 10) : "Unknown"],
+      ["Live protocol", "Not measured"],
+      ["Live issuer", "Not measured"],
     ];
     $("#dep-ssl").innerHTML = `<div class="ssl-grid">${rows.map(([label, value, cls]) =>
       `<div class="ssl-row"><span class="ssl-label">${escapeHtml(label)}</span><span class="ssl-value ${cls || ""}">${escapeHtml(String(value))}</span></div>`
@@ -438,7 +534,7 @@
   function renderTakeover(takeover) {
     const countEl = $("#takeover-count");
     const vulnerable = takeover.filter(t => t.vulnerable);
-    countEl.textContent = vulnerable.length ? `${vulnerable.length} VULNERABLE` : (takeover.length || "");
+    countEl.textContent = vulnerable.length ? `${vulnerable.length} POTENTIAL` : (takeover.length || "");
     countEl.classList.toggle("hidden", !takeover.length);
     countEl.classList.toggle("cs-count-alert", vulnerable.length > 0);
     if (!takeover.length) {
@@ -447,7 +543,7 @@
     }
     $("#dep-takeover").innerHTML = takeover.map(t =>
       `<div class="takeover-row ${t.vulnerable ? "takeover-vuln" : ""}">
-        <span class="takeover-status ${t.vulnerable ? "vuln" : "ok"}">${t.vulnerable ? "⚠ VULNERABLE" : "✓ OK"}</span>
+        <span class="takeover-status ${t.vulnerable ? "vuln" : "ok"}">${t.vulnerable ? "⚠ POTENTIAL" : "✓ NO SIGNATURE"}</span>
         <div class="takeover-detail">
           <strong>${escapeHtml(t.subdomain)}</strong>
           <code>CNAME → ${escapeHtml(t.cname || "none")}</code>

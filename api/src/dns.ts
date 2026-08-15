@@ -1,5 +1,6 @@
 import type { DnsAnswer, DnsQueryResult } from "./types";
 import { getDomain } from "tldts";
+import type { RequestBudget } from "./budget";
 
 const DOH_ENDPOINT = "https://cloudflare-dns.com/dns-query";
 const GOOGLE_DOH_ENDPOINT = "https://dns.google/resolve";
@@ -24,16 +25,21 @@ export async function queryDns(
   name: string,
   type: string,
   provider: "cloudflare" | "google" = "cloudflare",
+  budget?: RequestBudget,
 ): Promise<DnsQueryResult> {
   const started = performance.now();
   const endpoint = provider === "google" ? GOOGLE_DOH_ENDPOINT : DOH_ENDPOINT;
   const url = `${endpoint}?name=${encodeURIComponent(name)}&type=${encodeURIComponent(type)}&do=true`;
 
   try {
-    const response = await fetch(url, {
+    const response = await (budget ? budget.fetch(url, {
       headers: { Accept: "application/dns-json" },
       signal: AbortSignal.timeout(5000),
-    });
+      resource: "dns",
+    }) : fetch(url, {
+      headers: { Accept: "application/dns-json" },
+      signal: AbortSignal.timeout(5000),
+    }));
     if (!response.ok) throw new Error(`Resolver returned HTTP ${response.status}`);
     const payload = await response.json<DnsJson>();
     const answers: DnsAnswer[] = (payload.Answer || []).map((answer) => ({
@@ -67,7 +73,7 @@ export async function queryDns(
   }
 }
 
-export async function inspectDns(hostname: string): Promise<DnsQueryResult[]> {
+export async function inspectDns(hostname: string, budget?: RequestBudget): Promise<DnsQueryResult[]> {
   const apex = registrableApproximation(hostname);
   const targets: Array<[string, string]> = [
     [hostname, "A"],
@@ -76,7 +82,7 @@ export async function inspectDns(hostname: string): Promise<DnsQueryResult[]> {
     [apex, "NS"],
     [apex, "CAA"],
   ];
-  return Promise.all(targets.map(([name, type]) => queryDns(name, type)));
+  return Promise.all(targets.map(([name, type]) => queryDns(name, type, "cloudflare", budget)));
 }
 
 function registrableApproximation(hostname: string): string {
