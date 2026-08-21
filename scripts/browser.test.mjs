@@ -63,7 +63,8 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
   });
   await page.goto(pathToFileURL(path.resolve("web/index.html")).href);
   await page.fill("#url-input", "https://micros0ft.example/login");
-  await page.locator(".risk-context").evaluate((element) => { element.open = true; });
+  await page.locator(".trace-options > summary").click();
+  await page.locator(".risk-context > summary").click();
   await page.fill("#claimed-organisation", "Microsoft");
   await page.fill("#message-context", "Password reset email");
   await page.check("#map-deps");

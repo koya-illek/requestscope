@@ -25,6 +25,7 @@ test("public shell exposes metadata, keyboard navigation and privacy", async () 
   assert.match(html, /Skip to URL trace/);
   assert.ok(html.includes("./privacy.html"));
   assert.ok(html.includes("Include external reputation"));
+  assert.ok(html.includes("Advanced trace options"));
   assert.ok(html.includes("Cloudflare's malware-filtering DNS receives hostnames only"));
   assert.ok(html.includes("Google Web Risk and PhishTank receive the complete original and final URL"));
   assert.ok(html.includes("How RequestScope works"));

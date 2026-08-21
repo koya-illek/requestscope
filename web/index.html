@@ -58,32 +58,40 @@
           <span>Reports expire after 14 days</span>
           <span>No login required</span>
         </div>
-        <label class="deps-toggle">
-          <input type="checkbox" id="map-deps" name="mapDependencies">
-          <span class="deps-toggle-text">
-            <strong>Map external dependencies</strong>
-            <small>CSP analysis · bounded JS bundle scan · Certificate Transparency history. Optional stages stop at the request budget.</small>
-          </span>
-        </label>
-        <label class="deps-toggle reputation-toggle">
-          <input type="checkbox" id="external-reputation" name="externalReputation">
-          <span class="deps-toggle-text" id="reputation-toggle-text">
-            <strong>Include external reputation</strong>
-            <small>Sends full original/final URLs to Google Web Risk and PhishTank; Cloudflare receives hostnames only. Coverage is imperfect.</small>
-          </span>
-        </label>
-        <p class="reputation-consent">Enable only for URLs you are permitted to share. Google Web Risk and PhishTank receive the complete original and final URL, including query values; PhishTank may record request parameters and source IP. Cloudflare's malware-filtering DNS receives hostnames only. RequestScope does not send the inspected page body to these providers. Results can contain false positives or miss risky sites. <a href="https://docs.cloud.google.com/web-risk/docs/user-warnings" target="_blank" rel="noopener noreferrer">Google advisory terms</a> · <a href="https://phishtank.org/privacy.php" target="_blank" rel="noopener noreferrer">PhishTank privacy</a> · <a href="https://developers.cloudflare.com/1.1.1.1/privacy/" target="_blank" rel="noopener noreferrer">Cloudflare resolver privacy</a></p>
-        <details class="risk-context">
-          <summary>Add security context <span>optional</span></summary>
-          <div class="risk-context-grid">
-            <label for="claimed-organisation">Claimed organisation
-              <input id="claimed-organisation" name="claimedOrganisation" type="text" maxlength="120" placeholder="e.g. Microsoft">
+        <details class="trace-options">
+          <summary>
+            <span><strong>Advanced trace options</strong><small>Dependency mapping, external reputation, and impersonation context</small></span>
+            <span class="trace-options-state" id="trace-options-state">Optional</span>
+          </summary>
+          <div class="trace-options-body">
+            <label class="deps-toggle">
+              <input type="checkbox" id="map-deps" name="mapDependencies">
+              <span class="deps-toggle-text">
+                <strong>Map external dependencies</strong>
+                <small>CSP analysis · bounded JS bundle scan · Certificate Transparency history. Optional stages stop at the request budget.</small>
+              </span>
             </label>
-            <label for="message-context">Message context
-              <textarea id="message-context" name="messageContext" maxlength="1000" rows="2" placeholder="e.g. Password expiry email asking the user to sign in"></textarea>
+            <label class="deps-toggle reputation-toggle">
+              <input type="checkbox" id="external-reputation" name="externalReputation">
+              <span class="deps-toggle-text" id="reputation-toggle-text">
+                <strong>Include external reputation</strong>
+                <small>Sends full original/final URLs to Google Web Risk and PhishTank; Cloudflare receives hostnames only. Coverage is imperfect.</small>
+              </span>
             </label>
+            <p class="reputation-consent">Enable only for URLs you are permitted to share. Google Web Risk and PhishTank receive the complete original and final URL, including query values; PhishTank may record request parameters and source IP. Cloudflare's malware-filtering DNS receives hostnames only. RequestScope does not send the inspected page body to these providers. Results can contain false positives or miss risky sites. <a href="https://docs.cloud.google.com/web-risk/docs/user-warnings" target="_blank" rel="noopener noreferrer">Google advisory terms</a> · <a href="https://phishtank.org/privacy.php" target="_blank" rel="noopener noreferrer">PhishTank privacy</a> · <a href="https://developers.cloudflare.com/1.1.1.1/privacy/" target="_blank" rel="noopener noreferrer">Cloudflare resolver privacy</a></p>
+            <details class="risk-context">
+              <summary>Add security context <span>optional</span></summary>
+              <div class="risk-context-grid">
+                <label for="claimed-organisation">Claimed organisation
+                  <input id="claimed-organisation" name="claimedOrganisation" type="text" maxlength="120" placeholder="e.g. Microsoft">
+                </label>
+                <label for="message-context">Message context
+                  <textarea id="message-context" name="messageContext" maxlength="1000" rows="2" placeholder="e.g. Password expiry email asking the user to sign in"></textarea>
+                </label>
+              </div>
+              <p>Context improves impersonation checks. Raw message context is not retained; the claimed organisation and matched signal categories appear in the report.</p>
+            </details>
           </div>
-          <p>Context improves impersonation checks. Raw message context is not retained; the claimed organisation and matched signal categories appear in the report.</p>
         </details>
         <div class="query-warning hidden" id="query-warning">
           <strong>Query parameters detected</strong>

@@ -25,6 +25,13 @@
     runTrace(input.value);
   });
   input.addEventListener("input", updateQueryWarning);
+  [mapDepsCheckbox, externalReputationCheckbox].forEach((control) =>
+    control?.addEventListener("change", updateAdvancedOptionState)
+  );
+  [claimedOrganisation, messageContext].forEach((control) =>
+    control?.addEventListener("input", updateAdvancedOptionState)
+  );
+  updateAdvancedOptionState();
   $("#new-trace").addEventListener("click", reset);
   $("#error-close").addEventListener("click", () => errorPanel.classList.add("hidden"));
   $("#copy-link").addEventListener("click", copyShareLink);
@@ -40,6 +47,13 @@
     $$(".filter").forEach((item) => item.classList.toggle("active", item === button));
     renderDependencies(button.dataset.filter);
   }));
+
+  function updateAdvancedOptionState() {
+    const selected = Number(Boolean(mapDepsCheckbox?.checked))
+      + Number(Boolean(externalReputationCheckbox?.checked))
+      + Number(Boolean(claimedOrganisation?.value.trim() || messageContext?.value.trim()));
+    $("#trace-options-state").textContent = selected ? `${selected} selected` : "Optional";
+  }
 
   async function configureProviderAvailability() {
     try {
