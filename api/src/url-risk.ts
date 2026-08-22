@@ -88,11 +88,17 @@ export function assessUrlRisk(
     const candidate = host.split(".")[0].replace(/[^a-z0-9]/g, "");
     for (const entry of brand ? [brand] : BRANDS) {
       if (entry.domains.some((domain) => host === domain || host.endsWith(`.${domain}`))) continue;
-      const match = entry.aliases.find((alias) => looksLike(candidate, alias));
+      const match = matchLookalike(host.split(".")[0], candidate, entry.aliases);
       if (!match) continue;
-      add(findings, "brand-lookalike", "high", brand ? 38 : 32, `Possible ${entry.organisation} lookalike`,
-        `${host} resembles a known ${entry.organisation} name but is not one of its recognised domains.`,
-        { hostname: host, organisation: entry.organisation, expectedDomains: entry.domains, matchedName: match });
+      const detail = match.matchType === "edit-distance"
+        ? `${host} resembles a known ${entry.organisation} name but is not one of its recognised domains.`
+        : match.matchType === "name-containment"
+          ? `${host} combines a known ${entry.organisation} name with additional words, a common impersonation pattern.`
+          : `${host} uses a known ${entry.organisation} name but is not one of its recognised domains; legitimate sibling or regional domains are possible.`;
+      add(findings, "brand-lookalike", match.severity, brand ? match.score + 6 : match.score,
+        `Possible ${entry.organisation} lookalike`, detail,
+        { hostname: host, organisation: entry.organisation, expectedDomains: entry.domains, matchedName: match.matchedName, matchType: match.matchType },
+        match.confidence);
       break;
     }
   }
@@ -193,8 +199,40 @@ function resolveClaimedBrand(claimed: string | null) {
   return BRANDS.find((entry) => entry.organisation.toLowerCase().replace(/[^a-z0-9]/g, "") === normalized || entry.aliases.includes(normalized)) || null;
 }
 
-function looksLike(candidate: string, brand: string): boolean {
-  if (candidate === brand) return true;
+interface LookalikeMatch {
+  matchedName: string;
+  matchType: "exact-name-alt-tld" | "edit-distance" | "name-containment";
+  severity: UrlRiskFinding["severity"];
+  score: number;
+  confidence: UrlRiskFinding["confidence"];
+}
+
+/** Aliases shorter than this are too collision-prone for containment matching. */
+const MIN_CONTAINMENT_ALIAS_LENGTH = 5;
+
+function matchLookalike(label: string, candidate: string, aliases: string[]): LookalikeMatch | null {
+  const exact = aliases.find((alias) => candidate === alias);
+  if (exact) {
+    // An exact brand name on an unrecognised domain may be a legitimate
+    // sibling TLD, so it is reported with reduced severity and confidence.
+    return { matchedName: exact, matchType: "exact-name-alt-tld", severity: "medium", score: 14, confidence: "medium" };
+  }
+  const typo = aliases.find((alias) => editDistanceWithinOne(candidate, alias));
+  if (typo) return { matchedName: typo, matchType: "edit-distance", severity: "high", score: 32, confidence: "high" };
+  const contained = aliases.find((alias) =>
+    alias.length >= MIN_CONTAINMENT_ALIAS_LENGTH && containsBrandToken(label, alias));
+  if (contained) return { matchedName: contained, matchType: "name-containment", severity: "medium", score: 16, confidence: "medium" };
+  return null;
+}
+
+/** Match a brand name as a whole separator-delimited word inside the first
+ * hostname label, e.g. "microsoft-login" or "secure-paypal". */
+function containsBrandToken(label: string, alias: string): boolean {
+  const tokens = label.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  return tokens.length > 1 && tokens.includes(alias);
+}
+
+function editDistanceWithinOne(candidate: string, brand: string): boolean {
   if (candidate.length < 4 || brand.length < 4 || Math.abs(candidate.length - brand.length) > 1) return false;
   return editDistance(candidate, brand) <= 1;
 }

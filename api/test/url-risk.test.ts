@@ -48,6 +48,33 @@ describe("URL risk assessment", () => {
     expect(result.findings.map((finding) => finding.code)).toEqual(expect.arrayContaining(["brand-lookalike", "password-form"]));
   });
 
+  it("downgrades an exact brand name on a plausible sibling TLD instead of hard-flagging it", () => {
+    const result = assessUrlRisk(report("google.dev"), "https://google.dev/");
+    const lookalike = result.findings.find((finding) => finding.code === "brand-lookalike");
+    expect(lookalike?.severity).toBe("medium");
+    expect(lookalike?.confidence).toBe("medium");
+    expect(lookalike?.evidence.matchType).toBe("exact-name-alt-tld");
+    expect(result.verdict).toBe("low");
+  });
+
+  it("keeps a single-character brand typo at high severity", () => {
+    const result = assessUrlRisk(report("goagle.com"), "https://goagle.com/");
+    const lookalike = result.findings.find((finding) => finding.code === "brand-lookalike");
+    expect(lookalike?.severity).toBe("high");
+    expect(lookalike?.confidence).toBe("high");
+    expect(lookalike?.evidence.matchType).toBe("edit-distance");
+    expect(result.riskScore).toBeGreaterThanOrEqual(30);
+  });
+
+  it("flags hyphenated brand impersonation through token containment", () => {
+    const result = assessUrlRisk(report("microsoft-login.com"), "https://microsoft-login.com/signin");
+    const lookalike = result.findings.find((finding) => finding.code === "brand-lookalike");
+    expect(lookalike?.evidence.matchedName).toBe("microsoft");
+    expect(lookalike?.evidence.matchType).toBe("name-containment");
+    expect(lookalike?.severity).toBe("medium");
+    expect(lookalike?.confidence).toBe("medium");
+  });
+
   it("does not invent a lookalike finding for an organisation without known domains", () => {
     const result = assessUrlRisk(report(), "https://example.com/", { claimedOrganisation: "Example" });
     expect(result.verdict).toBe("low");
