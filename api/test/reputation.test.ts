@@ -138,4 +138,26 @@ describe("external reputation", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(consumeQuota).toHaveBeenCalledTimes(1);
   });
+
+  it("still checks the final URL when a redirect changes only query values", async () => {
+    const checkedUris: string[] = [];
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (url.hostname === "webrisk.googleapis.com") {
+        checkedUris.push(url.searchParams.get("uri") || "");
+        return Response.json({});
+      }
+      return Response.json({ results: { in_database: false } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await checkExternalReputation(
+      "https://landing.example/login?utm_source=mail",
+      "https://landing.example/login?sid=victim-session",
+      { enabled: true, googleWebRiskApiKey: "google-key", consumeQuota: async () => true, now: fixedNow },
+    );
+
+    expect(checkedUris).toContain("https://landing.example/login?utm_source=mail");
+    expect(checkedUris).toContain("https://landing.example/login?sid=victim-session");
+  });
 });

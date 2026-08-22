@@ -1,4 +1,4 @@
-import { redactUrlForStorage } from "./security";
+import type { ReputationAssessment, ReputationProviderName, ReputationProviderResult } from "./types";
 import type { RequestBudget } from "./budget";
 import type {
   ReputationAssessment,
@@ -363,7 +363,11 @@ function summarize(providers: ReputationProviderResult[]): ReputationAssessment 
 
 function uniqueTargets(requestedUrl: string, finalUrl: string | null): Target[] {
   const targets: Target[] = [{ kind: "requested", url: requestedUrl }];
-  if (finalUrl && redactUrlForStorage(finalUrl) !== redactUrlForStorage(requestedUrl)) {
+  // Compare the raw URLs: redaction collapses differing query values into the
+  // same string, which would silently skip a final URL whose only change is
+  // exactly the per-victim parameter phishing kits vary. Redaction is a
+  // storage concern; providers receive full URLs by consent.
+  if (finalUrl && finalUrl !== requestedUrl) {
     targets.push({ kind: "final", url: finalUrl });
   }
   return targets;
