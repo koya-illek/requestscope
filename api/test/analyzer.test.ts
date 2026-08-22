@@ -63,6 +63,24 @@ describe("analyzeUrl", () => {
     expect(stages).toEqual(expect.arrayContaining(["validated", "dns", "hop", "response", "complete"]));
   });
 
+  it("fetches dependency scripts with their original query values while storing them redacted", async () => {
+    const requested: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      requested.push(url.toString());
+      if (url.hostname === "cloudflare-dns.com" || url.hostname === "dns.google") return dnsResponse(url);
+      if (url.hostname === "crt.sh") return Response.json([]);
+      return new Response('<html><script src="https://cdn.example.net/app.js?v=1.2.3"></script></html>', {
+        headers: { "Content-Type": "text/html" },
+      });
+    }));
+
+    const report = await analyzeUrl("https://example.com", 14, {}, () => {}, { mapDependencies: true });
+    expect(requested).toContain("https://cdn.example.net/app.js?v=1.2.3");
+    expect(requested.some((value) => value.includes("%5Bredacted%5D"))).toBe(false);
+    expect(report.dependencies.items[0]?.url).toContain("v=%5Bredacted%5D");
+  });
+
   it("records one partial hop when a redirect target is blocked", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);

@@ -245,11 +245,13 @@ export async function analyzeUrl(
   const dependencyBudgetBefore = budget.snapshot();
   let dependencyMap: ScanReport["dependencyMap"] = undefined;
   if (options.mapDependencies && finalResponse) {
+    // Derived fetches use the URLs as observed; redaction is a storage concern
+    // and would send literal "[redacted]" query values to third parties.
     dependencyMap = await mapDependencies(
       initial.hostname,
       current,
       hops.at(-1)?.responseHeaders || {},
-      dependencies.filter((d) => d.type === "script").map((d) => ({ url: d.url, host: d.host })),
+      dependenciesRaw.filter((d) => d.type === "script").map((d) => ({ url: d.url, host: d.host })),
       (event) => onProgress({ stage: event.stage as AnalyzerProgress["stage"], message: event.message }),
       budget,
     );
