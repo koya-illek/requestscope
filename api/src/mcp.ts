@@ -1,5 +1,6 @@
 import type { ScanReport, UrlRiskAssessment } from "./types";
 import type { UrlRiskContext } from "./url-risk";
+import { BlockedTargetError, InputError, RateLimitError } from "./security";
 
 const MCP_PROTOCOL_VERSION = "2025-11-25";
 const MCP_SERVER_VERSION = "2.2.0";
@@ -16,30 +17,46 @@ export interface McpRiskInput extends UrlRiskContext {
   url: string;
 }
 
+export interface McpHandlerOptions {
+  beforeToolCall?: () => Promise<void>;
+  corsHeaders?: Record<string, string>;
+}
+
+/** A malformed request envelope: the payload parsed as JSON but is not a
+ * usable JSON-RPC message (wrong shape, unsupported batch, or over size). */
+class McpRequestShapeError extends Error {
+  constructor(readonly jsonRpcCode: number, message: string) {
+    super(message);
+  }
+}
+
 export async function handleMcp(
   request: Request,
   execute: (name: string, input: Record<string, unknown>) => Promise<ScanReport | UrlRiskAssessment>,
-  options: { beforeToolCall?: () => Promise<void> } = {},
+  options: McpHandlerOptions = {},
 ): Promise<Response> {
-  const methodHeaders = { Allow: "POST, OPTIONS", "X-Robots-Tag": "noindex, nofollow" };
+  const cors = options.corsHeaders || {};
+  const methodHeaders = { Allow: "POST, OPTIONS", "X-Robots-Tag": "noindex, nofollow", ...cors };
   if (request.method === "GET") {
     return new Response(null, { status: 405, headers: methodHeaders });
   }
   if (request.method !== "POST") return new Response(null, { status: 405, headers: methodHeaders });
 
   const contentType = request.headers.get("Content-Type") || "";
-  if (!contentType.toLowerCase().includes("application/json")) return rpcError(null, -32600, "Content-Type must be application/json", 415);
+  if (!contentType.toLowerCase().includes("application/json")) return rpcError(null, -32600, "Content-Type must be application/json", 415, cors);
 
   let message: McpRequest;
   try {
     message = await readMcpMessage(request);
   } catch (error) {
-    return rpcError(null, -32700, error instanceof Error ? error.message : "Invalid JSON", 400);
+    if (error instanceof SyntaxError) return rpcError(null, -32700, "Invalid JSON", 400, cors);
+    if (error instanceof McpRequestShapeError) return rpcError(null, error.jsonRpcCode, error.message, 400, cors);
+    throw error;
   }
-  if (message.jsonrpc !== "2.0" || typeof message.method !== "string") return rpcError(message.id ?? null, -32600, "Invalid JSON-RPC request", 400);
+  if (message.jsonrpc !== "2.0" || typeof message.method !== "string") return rpcError(message.id ?? null, -32600, "Invalid JSON-RPC request", 400, cors);
 
-  if (message.method.startsWith("notifications/")) return new Response(null, { status: 202 });
-  if (message.id === undefined) return new Response(null, { status: 202 });
+  if (message.method.startsWith("notifications/")) return new Response(null, { status: 202, headers: methodHeaders });
+  if (message.id === undefined) return new Response(null, { status: 202, headers: methodHeaders });
 
   switch (message.method) {
     case "initialize":
@@ -48,19 +65,27 @@ export async function handleMcp(
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "requestscope", title: "RequestScope URL Risk", version: MCP_SERVER_VERSION },
         instructions: "Use trace_request for full DNS, redirect, HTTP, dependency, security-signal, and finding evidence; assess_url_risk for phishing and impersonation risk; and get_requestscope_report to retrieve a shared report. A low result never certifies a URL as safe. Set externalReputation true only after the user agrees that the original and final URL, including query values, may be sent to Google Web Risk and PhishTank, while Cloudflare's malware-filtering DNS receives their hostnames only.",
-      });
+      }, cors);
     case "ping":
-      return rpcResult(message.id, {});
+      return rpcResult(message.id, {}, cors);
     case "tools/list":
-      return rpcResult(message.id, { tools: [traceTool(), riskTool(), reportTool()] });
+      return rpcResult(message.id, { tools: [traceTool(), riskTool(), reportTool()] }, cors);
     case "tools/call":
-      return callTool(message.id, message.params, execute, options);
+      try {
+        return await callTool(message.id, message.params, execute, options);
+      } catch (error) {
+        // Quota failures must stay transport-visible so clients can back off.
+        if (error instanceof RateLimitError) {
+          return rpcError(message.id ?? null, -32000, error.message, 429, { ...cors, "Retry-After": "3600" });
+        }
+        throw error;
+      }
     default:
-      return rpcError(message.id, -32601, `Method not found: ${message.method}`);
+      return rpcError(message.id, -32601, `Method not found: ${message.method}`, 200, cors);
   }
 }
 
-async function callTool(id: string | number | null, params: unknown, execute: (name: string, input: Record<string, unknown>) => Promise<ScanReport | UrlRiskAssessment>, options: { beforeToolCall?: () => Promise<void> }): Promise<Response> {
+async function callTool(id: string | number | null, params: unknown, execute: (name: string, input: Record<string, unknown>) => Promise<ScanReport | UrlRiskAssessment>, options: McpHandlerOptions): Promise<Response> {
   const value = params && typeof params === "object" ? params as Record<string, unknown> : {};
   if (!["trace_request", "assess_url_risk", "get_requestscope_report"].includes(String(value.name))) return rpcError(id, -32602, "Unknown tool name");
   const args = value.arguments && typeof value.arguments === "object" ? value.arguments as Record<string, unknown> : {};
@@ -82,8 +107,10 @@ async function callTool(id: string | number | null, params: unknown, execute: (n
   if (args.mapDependencies !== undefined && typeof args.mapDependencies !== "boolean") return rpcError(id, -32602, "mapDependencies must be a boolean");
   if (args.externalReputation !== undefined && typeof args.externalReputation !== "boolean") return rpcError(id, -32602, "externalReputation must be a boolean");
 
+  // Quota enforcement runs before the guarded execution so RateLimitError
+  // propagates to handleMcp and becomes an HTTP 429 JSON-RPC error.
+  await options.beforeToolCall?.();
   try {
-    await options.beforeToolCall?.();
     const assessment = await execute(String(value.name), args);
     return rpcResult(id, {
       content: [{ type: "text", text: JSON.stringify(assessment) }],
@@ -91,8 +118,15 @@ async function callTool(id: string | number | null, params: unknown, execute: (n
       isError: false,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "The URL assessment failed";
-    return rpcResult(id, { content: [{ type: "text", text: message }], isError: true });
+    // Tool-execution failures are reported as isError results per the MCP
+    // spec. Expected input/target errors keep their helpful message; anything
+    // else is logged server-side and masked so internal details never reach
+    // model-visible output.
+    if (error instanceof InputError || error instanceof BlockedTargetError) {
+      return rpcResult(id, { content: [{ type: "text", text: error.message }], isError: true });
+    }
+    console.error("mcp_tool_failed", error);
+    return rpcResult(id, { content: [{ type: "text", text: "The URL assessment could not be completed. Please try again." }], isError: true });
   }
 }
 
@@ -215,7 +249,7 @@ function reputationAssessmentSchema() {
 }
 
 async function readMcpMessage(request: Request): Promise<McpRequest> {
-  if (!request.body) throw new Error("MCP request body is required");
+  if (!request.body) throw new McpRequestShapeError(-32600, "MCP request body is required");
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -226,7 +260,7 @@ async function readMcpMessage(request: Request): Promise<McpRequest> {
       total += value.byteLength;
       if (total > MAX_MCP_REQUEST_BYTES) {
         await reader.cancel();
-        throw new Error("MCP request is too large");
+        throw new McpRequestShapeError(-32600, "MCP request is too large");
       }
       chunks.push(value);
     }
@@ -239,23 +273,29 @@ async function readMcpMessage(request: Request): Promise<McpRequest> {
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  const parsed = JSON.parse(new TextDecoder().decode(bytes));
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid JSON-RPC request");
+  const decoded = new TextDecoder().decode(bytes);
+  // JSON.parse failures surface as SyntaxError so the caller can answer with
+  // -32700 Parse error; shape problems below are -32600 Invalid Request.
+  const parsed = JSON.parse(decoded) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new McpRequestShapeError(-32600, "Invalid JSON-RPC request");
+  }
   return parsed as McpRequest;
 }
 
-function rpcResult(id: string | number | null, result: unknown): Response {
-  return rpc({ jsonrpc: "2.0", id, result });
+function rpcResult(id: string | number | null, result: unknown, cors: Record<string, string> = {}): Response {
+  return rpc({ jsonrpc: "2.0", id, result }, 200, cors);
 }
 
-function rpcError(id: string | number | null, code: number, message: string, status = 200): Response {
-  return rpc({ jsonrpc: "2.0", id, error: { code, message } }, status);
+function rpcError(id: string | number | null, code: number, message: string, status = 200, cors: Record<string, string> = {}): Response {
+  return rpc({ jsonrpc: "2.0", id, error: { code, message } }, status, cors);
 }
 
-function rpc(payload: unknown, status = 200): Response {
+function rpc(payload: unknown, status = 200, cors: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(payload), {
     status,
     headers: {
+      ...cors,
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "no-store",
       "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,

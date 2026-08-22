@@ -4,6 +4,7 @@ import {
   BlockedTargetError,
   InputError,
   normalizeUrl,
+  RateLimitError,
 } from "./security";
 import type { Env, ReputationProviderName, ScanReport } from "./types";
 import { handleMcp } from "./mcp";
@@ -98,10 +99,11 @@ export default {
             messageContext: args.messageContext as string | undefined,
             externalReputation: args.externalReputation === true,
           };
-          const report = await createScan(request, input, env, ctx);
+          const report = await createScan(request, input, env, ctx, () => {}, { chargeAnonymousScanQuota: false });
           return tool === "assess_url_risk" ? report.urlRisk! : report;
         }, {
           beforeToolCall: async () => enforceScopedDailyRateLimit(request, env, "mcp", clampInt(env.MCP_DAILY_LIMIT, 200, 1, 5000), "Daily MCP request limit"),
+          corsHeaders: cors,
         });
       }
 
@@ -150,8 +152,6 @@ interface RiskInput {
   messageContext?: string;
   externalReputation?: boolean;
 }
-
-class RateLimitError extends Error {}
 
 async function authorizedRiskRequest(request: Request, env: Env): Promise<boolean> {
   if (!env.COPILOT_API_KEY) return true;
@@ -250,9 +250,12 @@ async function createScan(
   env: Env,
   ctx: ExecutionContext,
   onProgress: (event: AnalyzerProgress) => void = () => {},
+  options: { chargeAnonymousScanQuota?: boolean } = {},
 ): Promise<ScanReport> {
   const normalized = normalizeUrl(input.url);
-  await enforceRateLimit(request, env);
+  // MCP tool calls are metered by the dedicated "mcp" scope; charging the
+  // anonymous scan scope as well would make MCP_DAILY_LIMIT unreachable.
+  if (options.chargeAnonymousScanQuota !== false) await enforceRateLimit(request, env);
   const cacheKey = await recentScanCacheKey(
     request.url,
     normalized.toString(),

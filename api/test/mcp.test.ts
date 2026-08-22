@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleMcp } from "../src/mcp";
+import { RateLimitError } from "../src/security";
 import type { UrlRiskAssessment } from "../src/types";
 
 const assessment = {
@@ -89,5 +90,52 @@ describe("MCP Streamable HTTP endpoint", () => {
   it("returns 405 for an optional standalone GET stream", async () => {
     const response = await handleMcp(new Request("https://api.example/mcp"), async () => assessment);
     expect(response.status).toBe(405);
+  });
+
+  it("surfaces rate limits as an HTTP 429 JSON-RPC error instead of a tool result", async () => {
+    const response = await handleMcp(request("tools/call", { name: "assess_url_risk", arguments: { url: "https://example.com" } }), async () => assessment, {
+      beforeToolCall: async () => { throw new RateLimitError("Daily MCP request limit of 200 reached."); },
+    });
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("3600");
+    await expect(response.json()).resolves.toMatchObject({ error: { code: -32000, message: /Daily MCP request limit/ } });
+  });
+
+  it("masks unexpected tool failures instead of echoing internal messages", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const response = await handleMcp(request("tools/call", { name: "assess_url_risk", arguments: { url: "https://example.com" } }), async () => {
+      throw new TypeError("Cannot read properties of undefined (reading 'query') D1_EXEC_ERROR");
+    });
+    const body = await response.json<{ result: { isError: boolean; content: Array<{ text: string }> } }>();
+    expect(body.result.isError).toBe(true);
+    expect(body.result.content[0].text).not.toContain("D1");
+    expect(body.result.content[0].text).toContain("could not be completed");
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it("answers malformed-but-parseable envelopes with -32600 and syntax failures with -32700", async () => {
+    const shape = await handleMcp(new Request("https://api.example/mcp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([1, 2, 3]),
+    }), async () => assessment);
+    expect(shape.status).toBe(400);
+    await expect(shape.json()).resolves.toMatchObject({ error: { code: -32600 } });
+
+    const syntax = await handleMcp(new Request("https://api.example/mcp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{not json",
+    }), async () => assessment);
+    expect(syntax.status).toBe(400);
+    await expect(syntax.json()).resolves.toMatchObject({ error: { code: -32700 } });
+  });
+
+  it("echoes allowed-origin CORS headers on JSON-RPC responses", async () => {
+    const response = await handleMcp(request("initialize", {}), async () => assessment, {
+      corsHeaders: { "Access-Control-Allow-Origin": "https://app.example" },
+    });
+    expect(response.headers.get("access-control-allow-origin")).toBe("https://app.example");
   });
 });

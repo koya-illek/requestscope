@@ -8,6 +8,8 @@ export class BlockedTargetError extends Error {
   status = 403;
 }
 
+export class RateLimitError extends Error {}
+
 export function normalizeUrl(input: unknown): URL {
   if (typeof input !== "string" || input.trim().length === 0 || input.length > 2048) {
     throw new InputError("Enter a URL of no more than 2,048 characters.");
