@@ -18,12 +18,21 @@ export interface PublicResolution {
   queries: DnsQueryResult[];
 }
 
-/** Resolve a hostname through both configured public resolvers and fail closed. */
-export async function assertPublicTarget(hostname: string, budget?: RequestBudget): Promise<PublicResolution> {
+/** Resolve a hostname through both configured public resolvers and fail closed.
+ * When a validatedHosts map is supplied, an already-validated hostname is not
+ * re-resolved; the memo lives for one request only, so it never outlives the
+ * request deadline or the DNS TTLs involved. */
+export async function assertPublicTarget(
+  hostname: string,
+  budget?: RequestBudget,
+  validatedHosts?: Map<string, PublicResolution>,
+): Promise<PublicResolution> {
   const normalized = hostname.toLowerCase().replace(/\.$/, "");
   if (!normalized || normalized.includes("/") || normalized.includes(":") || isIpLiteral(normalized) || !isValidHostname(normalized)) {
     throw new BlockedTargetError("The derived target is not a public hostname.");
   }
+  const cached = validatedHosts?.get(normalized);
+  if (cached) return cached;
   const [cloudflare, google] = await Promise.all([
     Promise.all([queryDns(normalized, "A", "cloudflare", budget), queryDns(normalized, "AAAA", "cloudflare", budget)]),
     Promise.all([queryDns(normalized, "A", "google", budget), queryDns(normalized, "AAAA", "google", budget)]),
@@ -33,7 +42,9 @@ export async function assertPublicTarget(hostname: string, budget?: RequestBudge
   const addresses = uniqueAddresses(queries);
   const blocked = addresses.filter((address) => !isPublicIp(address));
   if (blocked.length) throw new BlockedTargetError("The hostname resolves to a private or reserved network address.");
-  return { hostname: normalized, addresses, queries };
+  const resolution: PublicResolution = { hostname: normalized, addresses, queries };
+  validatedHosts?.set(normalized, resolution);
+  return resolution;
 }
 
 /** Validate the original hostname and the final target of each manual redirect. */

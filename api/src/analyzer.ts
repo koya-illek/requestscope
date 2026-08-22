@@ -13,7 +13,7 @@ import {
   redactHeaderForStorage,
 } from "./security";
 import { RequestBudget, BudgetExceededError } from "./budget";
-import { assertPublicTarget, assertResolutionHealthy, uniqueAddresses } from "./egress";
+import { assertPublicTarget, assertResolutionHealthy, uniqueAddresses, type PublicResolution } from "./egress";
 import type { Dependency, PageSecuritySignals, RedirectHop, ScanReport, PhaseCoverage } from "./types";
 
 const MAX_REDIRECTS = 6;
@@ -80,6 +80,10 @@ export async function analyzeUrl(
   onProgress({ stage: "dns", message: `Resolved ${initialAddresses.length} public address records` });
 
   const hops: RedirectHop[] = [];
+  // One validation per unique redirect hostname per request: revisiting a host
+  // inside the same trace reuses its public-target resolution instead of
+  // spending four more DNS subrequests on it.
+  const validatedTargets = new Map<string, PublicResolution>();
   let current = initial;
   let finalResponse: Response | null = null;
   let bodyText = "";
@@ -158,7 +162,7 @@ export async function analyzeUrl(
       }
       try {
         const next = safeRedirect(current, location);
-        await assertPublicTarget(next.hostname, budget);
+        await assertPublicTarget(next.hostname, budget, validatedTargets);
         response.body?.cancel();
         current = next;
       } catch (error) {
