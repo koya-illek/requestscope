@@ -131,19 +131,48 @@ function isPublicIPv4(value: string): boolean {
 
 function isPublicIPv6(value: string): boolean {
   if (!/^[0-9a-f:]+$/.test(value)) return false;
-  if (value === "::" || value === "::1") return false;
-  const first = Number.parseInt(value.split(":")[0] || "0", 16);
+  const hextets = expandIpv6(value);
+  if (!hextets) return false;
+  const [first, second, third] = hextets;
   // Public DNS targets for this service must use IPv6 global unicast (2000::/3).
   if (first < 0x2000 || first > 0x3fff) return false;
-  if (value.startsWith("fc") || value.startsWith("fd")) return false;
-  if (/^fe[89ab]/.test(value)) return false;
-  if (value.startsWith("ff")) return false;
-  if (value.startsWith("2001:0:")) return false;
-  if (value.startsWith("2001:db8")) return false;
-  if (value.startsWith("2001:2:0:")) return false;
-  if (value.startsWith("2001:10:")) return false;
-  if (value.startsWith("2001:20:")) return false;
+  // Unique-local (fc00::/7), link-local (fe80::/10), and multicast (ff00::/8).
+  if ((first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80 || (first & 0xff00) === 0xff00) return false;
+  if (first === 0x2001) {
+    // Teredo tunneling (2001:0000::/32).
+    if (second === 0x0000) return false;
+    // Documentation (2001:db8::/32), benchmarking (2001:0002::/48),
+    // ORCHID and ORCHIDv2 (2001:0010::/28, 2001:0020::/28).
+    if (second === 0x0db8) return false;
+    if (second === 0x0002 && third === 0x0000) return false;
+    if ((second & 0xfff0) === 0x0010 || (second & 0xfff0) === 0x0020) return false;
+  }
   return true;
+}
+
+/** Expand an IPv6 address into its eight 16-bit groups, or null when malformed. */
+function expandIpv6(value: string): number[] | null {
+  const halves = value.split("::");
+  if (halves.length > 2) return null;
+  const parseGroups = (part: string): number[] | null => {
+    if (part === "") return [];
+    const groups: number[] = [];
+    for (const group of part.split(":")) {
+      if (!/^[0-9a-f]{1,4}$/.test(group)) return null;
+      groups.push(Number.parseInt(group, 16));
+    }
+    return groups;
+  };
+  if (halves.length === 2) {
+    const head = parseGroups(halves[0]);
+    const tail = parseGroups(halves[1]);
+    if (!head || !tail) return null;
+    const fill = 8 - head.length - tail.length;
+    if (fill < 1) return null;
+    return [...head, ...new Array<number>(fill).fill(0), ...tail];
+  }
+  const groups = parseGroups(value);
+  return groups && groups.length === 8 ? groups : null;
 }
 
 export function safeRedirect(current: URL, location: string): URL {

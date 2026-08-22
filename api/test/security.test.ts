@@ -66,6 +66,7 @@ describe("public address classification", () => {
     "1.1.1.1",
     "8.8.8.8",
     "2606:4700:4700::1111",
+    "2001:4860:4860::8888",
   ])("accepts public address %s", (address) => {
     expect(isPublicIp(address)).toBe(true);
   });
@@ -84,10 +85,29 @@ describe("public address classification", () => {
     "::1",
     "fc00::1",
     "fe80::1",
+    "ff02::1",
     "2001:db8::1",
+    "2001:db8:1::1",
     "::ffff:127.0.0.1",
     "64:ff9b::127.0.0.1",
   ])("rejects non-public address %s", (address) => {
+    expect(isPublicIp(address)).toBe(false);
+  });
+
+  it.each([
+    "2001::1",
+    "2001:0:0:0:0:0:0:1",
+    "2001:0000:1234:5678::1",
+    "2001:2::",
+    "2001:2:0:1::1",
+    "2001:10::",
+    "2001:1f::1",
+    "2001:20::",
+  ])("rejects compressed special-purpose IPv6 address %s", (address) => {
+    expect(isPublicIp(address)).toBe(false);
+  });
+
+  it.each(["2001:::", "1:2:3:4:5:6:7:8:9", "2001::db8::"])("rejects malformed IPv6 address %s", (address) => {
     expect(isPublicIp(address)).toBe(false);
   });
 });
