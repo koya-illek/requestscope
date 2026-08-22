@@ -20,10 +20,10 @@ afterEach(() => {
 });
 
 describe("API routing and input boundary", () => {
-  it("redirects human visitors from the Worker root", async () => {
+  it("serves no worker route for / because static assets own it", async () => {
     const response = await worker.fetch(new Request("https://api.example/"), env, ctx);
-    expect(response.status).toBe(302);
-    expect(response.headers.get("location")).toBe("https://requestscope.illek.ie/");
+    expect(response.status).toBe(404);
+    expect(response.headers.get("location")).toBeNull();
   });
 
   it("publishes endpoint discovery", async () => {
@@ -161,7 +161,7 @@ describe("API routing and input boundary", () => {
     expect(db.prepare).not.toHaveBeenCalled();
   });
 
-  it("uses read-only D1 access for a valid report retrieval", async () => {
+  it("rate-limits report retrieval durably and reads the report from D1", async () => {
     const report = { id: "abcdefghijklmnop" };
     const prepare = vi.fn((sql: string) => ({
       bind: vi.fn(() => ({ first: vi.fn(async () => sql.trimStart().startsWith("SELECT") ? { report_json: JSON.stringify(report) } : undefined) })),
@@ -169,8 +169,9 @@ describe("API routing and input boundary", () => {
     const response = await worker.fetch(new Request("https://api.example/api/scans/abcdefghijklmnop"), { ...env, DB: { prepare } as unknown as D1Database }, ctx);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(report);
-    expect(prepare).toHaveBeenCalledTimes(1);
-    expect(prepare.mock.calls[0][0]).toMatch(/^\s*SELECT/i);
+    expect(prepare).toHaveBeenCalledTimes(2);
+    expect(prepare.mock.calls[0][0]).toMatch(/^\s*INSERT INTO rate_limits/i);
+    expect(prepare.mock.calls[1][0]).toMatch(/^\s*SELECT/i);
   });
 });
 

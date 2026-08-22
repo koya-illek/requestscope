@@ -12,7 +12,6 @@ const API_VERSION = "1.4.0";
 const REPORT_ID = /^[A-Za-z0-9_-]{16}$/;
 const MAX_REQUEST_BYTES = 8192;
 const RECENT_SCAN_TTL = 300;
-const edgeRateBuckets = new Map<string, { count: number; expiresAt: number }>();
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -26,10 +25,6 @@ export default {
     }
 
     try {
-      if (url.pathname === "/" && (request.method === "GET" || request.method === "HEAD")) {
-        return Response.redirect("https://requestscope.illek.ie/", 302);
-      }
-
       if ((url.pathname === "/api" || url.pathname === "/api/") && request.method === "GET") {
         return json({
           service: "RequestScope API",
@@ -106,17 +101,14 @@ export default {
           const report = await createScan(request, input, env, ctx);
           return tool === "assess_url_risk" ? report.urlRisk! : report;
         }, {
-          // Handshake, ping, discovery and malformed messages remain read-only.
-          // Charge only validated tool calls through an isolate-local counter;
-          // durable D1 accounting is reserved for scans and provider quotas.
-          beforeToolCall: async () => enforceEdgeRateLimit(request, "mcp", clampInt(env.MCP_DAILY_LIMIT, 200, 1, 5000), "Daily MCP request limit"),
+          beforeToolCall: async () => enforceScopedDailyRateLimit(request, env, "mcp", clampInt(env.MCP_DAILY_LIMIT, 200, 1, 5000), "Daily MCP request limit"),
         });
       }
 
       const match = url.pathname.match(/^\/api\/scans\/([A-Za-z0-9_-]+)(\/export)?$/);
       if (match && request.method === "GET") {
         if (!REPORT_ID.test(match[1])) return json({ error: "Report not found" }, 404, cors);
-        await enforceEdgeRateLimit(request, "report", clampInt(env.REPORT_DAILY_LIMIT, 120, 1, 5000), "Daily report retrieval limit");
+        await enforceScopedDailyRateLimit(request, env, "report", clampInt(env.REPORT_DAILY_LIMIT, 120, 1, 5000), "Daily report retrieval limit");
         const report = await loadReport(env.DB, match[1]);
         if (!report) return json({ error: "Report not found or expired" }, 404, cors);
         if (match[2]) {
@@ -130,7 +122,7 @@ export default {
             },
           });
         }
-        return json(report, 200, { ...cors, "Cache-Control": "public, max-age=60" });
+        return json(report, 200, { ...cors, "Cache-Control": "private, max-age=60" });
       }
 
       return json({ error: "Not found" }, 404, cors);
@@ -371,23 +363,6 @@ async function enforceScopedDailyRateLimit(request: Request, env: Env, scope: st
     RETURNING request_count
   `).bind(key, date, now).first<{ request_count: number }>();
   if ((row?.request_count || 1) > limit) throw new RateLimitError(`${label} of ${limit} reached.`);
-}
-
-async function enforceEdgeRateLimit(request: Request, scope: string, limit: number, label: string): Promise<void> {
-  const ip = request.headers.get("CF-Connecting-IP") || "local";
-  const now = Date.now();
-  const windowMs = 86_400_000;
-  for (const [key, value] of edgeRateBuckets) {
-    if (value.expiresAt <= now) edgeRateBuckets.delete(key);
-  }
-  const key = `${scope}:${ip}`;
-  const current = edgeRateBuckets.get(key);
-  if (!current || current.expiresAt <= now) {
-    edgeRateBuckets.set(key, { count: 1, expiresAt: now + windowMs });
-    return;
-  }
-  current.count += 1;
-  if (current.count > limit) throw new RateLimitError(`${label} of ${limit} reached.`);
 }
 
 function bypassesScanRateLimit(ip: string, configured: string | undefined): boolean {
