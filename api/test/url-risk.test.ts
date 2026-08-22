@@ -105,6 +105,20 @@ describe("URL risk assessment", () => {
     expect(result.findings.some((finding) => finding.code === "brand-lookalike")).toBe(false);
   });
 
+  it("resolves verbose claimed organisations to their brand", () => {
+    const target = report("micros0ft.com");
+    const result = assessUrlRisk(target, "https://micros0ft.com/", { claimedOrganisation: "Microsoft Corporation" });
+    const lookalike = result.findings.find((finding) => finding.code === "brand-lookalike");
+    expect(lookalike?.evidence.organisation).toBe("Microsoft");
+    expect(lookalike?.evidence.matchType).toBe("edit-distance");
+  });
+
+  it("does not let a short alias prefix absorb an unrelated claim", () => {
+    const result = assessUrlRisk(report(), "https://example.com/", { claimedOrganisation: "Boiler Repair Co" });
+    expect(result.claimedOrganisation).toBe("Boiler Repair Co");
+    expect(result.findings.some((finding) => finding.code === "brand-lookalike")).toBe(false);
+  });
+
   it("identifies shorteners and cross-domain redirects", () => {
     const target = report("bit.ly", {
       finalUrl: "https://example.net/login",

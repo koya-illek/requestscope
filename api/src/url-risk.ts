@@ -195,8 +195,23 @@ function add(findings: UrlRiskFinding[], code: string, severity: UrlRiskFinding[
 
 function resolveClaimedBrand(claimed: string | null) {
   if (!claimed) return null;
-  const normalized = claimed.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return BRANDS.find((entry) => entry.organisation.toLowerCase().replace(/[^a-z0-9]/g, "") === normalized || entry.aliases.includes(normalized)) || null;
+  const normalized = normalizeBrandName(claimed);
+  // Prefix matching keeps verbose real-world claims ("Microsoft Corporation",
+  // "Bank of Ireland Group") effective. Names shorter than this stay
+  // exact-only so a short alias like "boi" cannot absorb unrelated claims
+  // ("Boiler Repair Co").
+  const MIN_PREFIX_NAME_LENGTH = 4;
+  return BRANDS.find((entry) =>
+    entry.aliases.some((alias) => {
+      const name = normalizeBrandName(alias);
+      return name.length >= MIN_PREFIX_NAME_LENGTH && normalized.startsWith(name);
+    }) || normalizeBrandName(entry.organisation).length >= MIN_PREFIX_NAME_LENGTH
+      && normalized.startsWith(normalizeBrandName(entry.organisation)),
+  ) || null;
+}
+
+function normalizeBrandName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 interface LookalikeMatch {
