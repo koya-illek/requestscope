@@ -103,8 +103,7 @@ a { color: inherit; }
 }
 .text-button:hover { color: var(--text); }
 .status-link { display: flex; min-height: 44px; align-items: center; gap: 8px; color: var(--muted); text-decoration: none; font-size: 13px; }
-.status-link span { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent); }
-.status-link > span:first-child { flex-shrink: 0; }
+.status-link > span:first-child { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent); flex-shrink: 0; }
 .status-link.degraded > span:first-child { background: var(--warning); box-shadow: 0 0 12px var(--warning); }
 .hero { padding: 116px 0 80px; position: relative; }
 .section-kicker {
