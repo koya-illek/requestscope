@@ -61,7 +61,11 @@
     if (event.target === methodDialog) methodDialog.close();
   });
   $$(".filter").forEach((button) => button.addEventListener("click", () => {
-    $$(".filter").forEach((item) => item.classList.toggle("active", item === button));
+    $$(".filter").forEach((item) => {
+      const active = item === button;
+      item.classList.toggle("active", active);
+      item.setAttribute("aria-pressed", String(active));
+    });
     renderDependencies(button.dataset.filter);
   }));
   window.addEventListener("hashchange", () => {
@@ -169,8 +173,19 @@
     errorPanel.classList.add("hidden");
     const controller = new AbortController();
     activeController = controller;
+    let idleTimedOut = false;
+    let idleTimer = 0;
+    const armIdleTimer = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        idleTimedOut = true;
+        controller.abort();
+      }, IDLE_TIMEOUT_MS);
+    };
+    armIdleTimer();
     try {
       const response = await fetch(`${API_BASE}/api/scans/${encodeURIComponent(id)}`, { signal: controller.signal });
+      armIdleTimer();
       if (!response.ok) {
         let message = `Saved report could not be loaded (HTTP ${response.status}).`;
         try {
@@ -189,13 +204,18 @@
     } catch (error) {
       stopProgress();
       if (error.name === "AbortError") {
-        showError(cancelRequested ? "Loading cancelled." : "Loading the saved report timed out. Please try again.");
+        showError(cancelRequested
+          ? "Loading cancelled."
+          : idleTimedOut
+            ? "Loading the saved report stalled with no updates for 45 seconds and was cancelled. Please try again."
+            : "Loading the saved report timed out. Please try again.");
       } else if (error instanceof TypeError) {
         showError("Network request failed. Check your connection and try again.");
       } else {
         showError(error.message || "Saved report could not be loaded.");
       }
     } finally {
+      clearTimeout(idleTimer);
       activeController = null;
       inFlight = false;
     }
@@ -288,7 +308,11 @@
     renderFindings(report.findings);
     renderDependencySummary(report.dependencies);
     renderDependencies("all");
-    $$(".filter").forEach((item) => item.classList.toggle("active", item.dataset.filter === "all"));
+    $$(".filter").forEach((item) => {
+      const active = item.dataset.filter === "all";
+      item.classList.toggle("active", active);
+      item.setAttribute("aria-pressed", String(active));
+    });
     renderDepMap(report.dependencyMap);
     reportPanel.classList.remove("hidden");
     $("#report-host").focus({ preventScroll: true });
