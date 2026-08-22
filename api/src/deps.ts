@@ -5,7 +5,7 @@ import {
   assessPiiRisk as classifierPiiRisk,
 } from "./classifier";
 import { probeTakeover } from "./takeover";
-import { fetchPublicUrl } from "./egress";
+import { fetchPublicUrl, type PublicResolution } from "./egress";
 import { RequestBudget } from "./budget";
 import { redactTextForStorage } from "./security";
 import type {
@@ -46,12 +46,15 @@ export async function mapDependencies(
 ): Promise<DependencyMap> {
   const started = performance.now();
   const budgetStarted = budget?.snapshot();
+  // One shared validation memo for every derived fetch of this map, so hosts
+  // repeated across bundles and takeover probes resolve once per request.
+  const validatedHosts = new Map<string, PublicResolution>();
 
   onProgress({ stage: "deps-csp", message: "Analysing Content-Security-Policy" });
   const csp = analyseCsp(responseHeaders["content-security-policy"]);
 
   onProgress({ stage: "deps-js", message: "Scanning JavaScript bundles" });
-  const { analysis: jsBundles, rawJsText } = await scrapeJsBundles(scriptDeps, budget);
+  const { analysis: jsBundles, rawJsText } = await scrapeJsBundles(scriptDeps, budget, validatedHosts);
 
   onProgress({ stage: "deps-ct", message: "Querying Certificate Transparency logs" });
   const certT = await queryCertTransparency(hostname, budget);
@@ -101,7 +104,7 @@ export async function mapDependencies(
 
   onProgress({ stage: "deps-takeover", message: "Probing subdomains for takeover risk" });
   const takeover = certT.subdomains.length > 0
-    ? await probeTakeover(certT.subdomains, budget)
+    ? await probeTakeover(certT.subdomains, budget, validatedHosts)
     : [];
 
   const byCategory = domains.reduce((acc, d) => {
@@ -200,7 +203,7 @@ function extractHostFromCspSource(source: string): string | null {
   return host;
 }
 
-async function scrapeJsBundles(scriptDeps: Array<{ url: string; host: string }>, budget?: RequestBudget): Promise<{ analysis: JsBundleAnalysis; rawJsText: string }> {
+async function scrapeJsBundles(scriptDeps: Array<{ url: string; host: string }>, budget?: RequestBudget, validatedHosts?: Map<string, PublicResolution>): Promise<{ analysis: JsBundleAnalysis; rawJsText: string }> {
   const bundles = scriptDeps
     .filter((d) => d.url.match(/\.m?js(?:\?|$)/i) || d.url.match(/\/js\//i))
     .slice(0, MAX_JS_BUNDLES);
@@ -227,7 +230,7 @@ async function scrapeJsBundles(scriptDeps: Array<{ url: string; host: string }>,
         signal: AbortSignal.timeout(FETCH_TIMEOUT),
       };
       const response = budget
-        ? (await fetchPublicUrl(bundle.url, budget, requestInit, 2)).response
+        ? (await fetchPublicUrl(bundle.url, budget, requestInit, 2, validatedHosts)).response
         : await fetch(bundle.url, { ...requestInit, redirect: "manual" });
 
       if (!response.ok) {

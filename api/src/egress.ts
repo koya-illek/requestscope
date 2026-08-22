@@ -47,15 +47,19 @@ export async function assertPublicTarget(
   return resolution;
 }
 
-/** Validate the original hostname and the final target of each manual redirect. */
+/** Validate the original hostname and the final target of each manual redirect.
+ * When a per-request `validatedHosts` memo is supplied, host resolutions are
+ * shared across every derived fetch of the same trace instead of being
+ * re-paid per hop. */
 export async function fetchPublicUrl(
   input: string | URL,
   budget: RequestBudget,
   init: BudgetFetchInit = {},
   maxRedirects = MAX_DERIVED_REDIRECTS,
+  validatedHosts?: Map<string, PublicResolution>,
 ): Promise<{ response: Response; url: URL; redirects: number }> {
   let current = normalizeUrl(input.toString());
-  await assertPublicTarget(current.hostname, budget);
+  await assertPublicTarget(current.hostname, budget, validatedHosts);
   for (let redirects = 0; redirects <= maxRedirects; redirects += 1) {
     const response = await budget.fetch(current.toString(), { ...init, redirect: "manual" });
     const location = response.headers.get("location");
@@ -67,7 +71,7 @@ export async function fetchPublicUrl(
       throw new BlockedTargetError(`Derived redirect limit of ${maxRedirects} reached.`);
     }
     const next = safeRedirect(current, location);
-    await assertPublicTarget(next.hostname, budget);
+    await assertPublicTarget(next.hostname, budget, validatedHosts);
     response.body?.cancel();
     current = next;
   }

@@ -33,4 +33,35 @@ describe("shared public-target egress gate", () => {
     await expect(fetchPublicUrl("https://target.example", new RequestBudget())).rejects.toThrow(/public|IP|redirect/i);
     expect(requested.some((value) => value.includes("127.0.0.1"))).toBe(false);
   });
+
+  it("reuses a supplied validation memo instead of re-resolving the host", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (url.hostname === "cloudflare-dns.com" || url.hostname === "dns.google") return dnsResponse(url);
+      return new Response("<html></html>", { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const memo = new Map([["target.example", {
+      hostname: "target.example",
+      addresses: ["93.184.216.34"],
+      queries: [],
+    }]]);
+    const { response } = await fetchPublicUrl("https://target.example/bundle.js", new RequestBudget(), {}, 2, memo);
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(memo.get("target.example")).toBeDefined();
+  });
+
+  it("caches each validated hostname into the supplied memo", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (url.hostname === "cloudflare-dns.com" || url.hostname === "dns.google") return dnsResponse(url);
+      return new Response(null, { status: 200 });
+    }));
+
+    const memo = new Map();
+    await fetchPublicUrl("https://target.example/", new RequestBudget(), {}, 0, memo);
+    expect(memo.get("target.example")?.addresses).toEqual(["93.184.216.34"]);
+  });
 });

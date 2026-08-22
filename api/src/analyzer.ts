@@ -14,7 +14,7 @@ import {
 } from "./security";
 import { RequestBudget, BudgetExceededError } from "./budget";
 import { assertPublicTarget, assertResolutionHealthy, uniqueAddresses, type PublicResolution } from "./egress";
-import type { Dependency, PageSecuritySignals, RedirectHop, ScanReport, PhaseCoverage } from "./types";
+import type { Dependency, DnsQueryResult, PageSecuritySignals, RedirectHop, ScanReport, PhaseCoverage } from "./types";
 
 const MAX_REDIRECTS = 6;
 const MAX_BODY_BYTES = 256 * 1024;
@@ -76,14 +76,20 @@ export async function analyzeUrl(
   if (initialAddresses.some((address) => !isPublicIp(address))) {
     throw new BlockedTargetError("The hostname resolves to a private or reserved network address.");
   }
-  await assertSecondaryResolutionPublic(initial.hostname, budget);
+  const secondaryQueries = await assertSecondaryResolutionPublic(initial.hostname, budget);
   onProgress({ stage: "dns", message: `Resolved ${initialAddresses.length} public address records` });
 
   const hops: RedirectHop[] = [];
   // One validation per unique redirect hostname per request: revisiting a host
   // inside the same trace reuses its public-target resolution instead of
-  // spending four more DNS subrequests on it.
+  // spending four more DNS subrequests on it. The initial host is seeded so a
+  // redirect loop back to the origin reuses its completed validation.
   const validatedTargets = new Map<string, PublicResolution>();
+  validatedTargets.set(initial.hostname.toLowerCase().replace(/\.$/, ""), {
+    hostname: initial.hostname,
+    addresses: initialAddresses,
+    queries: [...dnsQueries, ...secondaryQueries],
+  });
   let current = initial;
   let finalResponse: Response | null = null;
   let bodyText = "";
@@ -330,7 +336,7 @@ export function extractPageSecuritySignals(html: string, pageUrl: URL): PageSecu
   return { passwordForm, forms: forms.length, externalFormAction, matchedLanguage };
 }
 
-async function assertSecondaryResolutionPublic(hostname: string, budget: RequestBudget): Promise<void> {
+async function assertSecondaryResolutionPublic(hostname: string, budget: RequestBudget): Promise<DnsQueryResult[]> {
   const results = await Promise.all([
     queryDns(hostname, "A", "google", budget),
     queryDns(hostname, "AAAA", "google", budget),
@@ -339,6 +345,7 @@ async function assertSecondaryResolutionPublic(hostname: string, budget: Request
   if (uniqueAddresses(results).some((address) => !isPublicIp(address))) {
     throw new BlockedTargetError("The hostname resolves to a private or reserved network address.");
   }
+  return results;
 }
 
 function selectHeaders(headers: Headers, baseUrl: URL): Record<string, string> {

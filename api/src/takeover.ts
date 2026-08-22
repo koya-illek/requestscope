@@ -1,6 +1,6 @@
 import type { SubdomainTakeoverCheck } from "./types";
 import { queryDns } from "./dns";
-import { fetchPublicUrl } from "./egress";
+import { fetchPublicUrl, type PublicResolution } from "./egress";
 import type { RequestBudget } from "./budget";
 
 const MAX_PROBES = 20;
@@ -283,6 +283,7 @@ async function readBodyLimited(response: Response): Promise<string> {
 async function probeSubdomain(
   subdomain: string,
   budget?: RequestBudget,
+  validatedHosts?: Map<string, PublicResolution>,
 ): Promise<SubdomainTakeoverCheck> {
   // Step 1: Query CNAME
   const dnsResult = await queryDns(subdomain, "CNAME", "cloudflare", budget);
@@ -328,7 +329,7 @@ async function probeSubdomain(
   // Step 3: HTTP probe to look for takeover signatures
   try {
     const { response, url } = budget
-      ? await fetchPublicUrl(`https://${subdomain}`, budget, { signal: AbortSignal.timeout(PROBE_TIMEOUT), resource: "takeover" }, 2)
+      ? await fetchPublicUrl(`https://${subdomain}`, budget, { signal: AbortSignal.timeout(PROBE_TIMEOUT), resource: "takeover" }, 2, validatedHosts)
       : { response: await fetch(`https://${subdomain}`, { redirect: "manual", signal: AbortSignal.timeout(PROBE_TIMEOUT) }), url: new URL(`https://${subdomain}`) };
 
     const httpStatus = response.status;
@@ -382,13 +383,14 @@ async function probeSubdomain(
 export async function probeTakeover(
   subdomains: string[],
   budget?: RequestBudget,
+  validatedHosts?: Map<string, PublicResolution>,
 ): Promise<SubdomainTakeoverCheck[]> {
   const targets = subdomains.slice(0, MAX_PROBES);
   const results: SubdomainTakeoverCheck[] = [];
   for (const subdomain of targets) {
     if (budget && !budget.canStart()) break;
     try {
-      const check = await probeSubdomain(subdomain, budget);
+      const check = await probeSubdomain(subdomain, budget, validatedHosts);
       if (check.cname !== null) results.push(check);
     } catch (error) {
       results.push({
