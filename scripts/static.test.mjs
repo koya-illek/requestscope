@@ -34,6 +34,8 @@ test("public shell exposes metadata, keyboard navigation and privacy", async () 
   assert.ok(html.includes("<noscript>"));
   assert.ok(html.includes('id="query-warning" role="status"'));
   assert.ok(html.includes('aria-labelledby="method-dialog-title"'));
+  assert.ok(html.includes('aria-pressed="true"'));
+  assert.ok(html.includes('aria-pressed="false"'));
   assert.ok(headers.includes("static.cloudflareinsights.com"));
   assert.ok(!html.includes("challenges.cloudflare.com"));
   assert.ok(!html.includes("turnstile-widget"));
@@ -55,6 +57,8 @@ test("public shell exposes metadata, keyboard navigation and privacy", async () 
   assert.ok(privacy.includes("Cloudflare's malware-filtering DNS"));
   assert.ok(privacy.includes("Certificate Transparency"));
   assert.ok(privacy.includes("Raw page bodies"));
+  assert.match(privacy, /report reads use bounded daily counters/);
+  assert.ok(!privacy.includes("report reads and MCP handshake or discovery requests do not write"));
   assert.doesNotMatch(privacy, /class="(?:eyebrow|section-kicker)"/);
   assert.doesNotMatch(privacy, /—/);
 });

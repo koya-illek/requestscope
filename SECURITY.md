@@ -75,6 +75,7 @@ The optional Cloudflare URL Scanner action opens a pre-filled external page only
 after a separate warning. RequestScope never submits that scan itself. Cloudflare
 states that URL Scanner reports are retained and may be made public.
 
-Reports are retained in D1 for the configured period, currently 14 days. Public
-report reads and MCP handshake or discovery messages do not write D1 rate-limit
-rows. Scan creation and provider quota accounting remain bounded and durable.
+Reports are retained in D1 for the configured period, currently 14 days.
+Validated scans, MCP tool calls, report reads, and provider quota accounting
+are bounded and durable in D1 with hashed client keys. MCP handshake or
+discovery messages do not write rate-limit rows.
