@@ -65,7 +65,6 @@ flowchart LR
 | Dependency engine | Extracts and classifies bounded resource references and optional script evidence | `api/src/deps.ts`, `api/src/classifier.ts` |
 | URL risk engine | Evaluates structure, brand similarity, typo and lookalike indicators, shorteners, message context, and phishing language | `api/src/url-risk.ts` |
 | Reputation adapters | Calls consented external reputation providers and caches provider results | `api/src/reputation.ts` |
-| CT and TLS evidence | Combines available Cloudflare edge metadata with best-effort certificate-transparency history | `api/src/ssl.ts` |
 | Takeover evidence | Performs bounded DNS and provider-signature checks for discovered names | `api/src/takeover.ts` |
 | MCP adapter | Publishes three typed tools over stateless Streamable HTTP | `api/src/mcp.ts` |
 | Browser application | Submits scans, renders trace phases and evidence, handles consent, and displays reports | `web/app.js`, `web/index.html` |
