@@ -125,8 +125,10 @@ alias; the negotiated MCP protocol version is `2025-11-25`.
 - OpenAPI agents/custom connectors: import [`web/openapi.yaml`](web/openapi.yaml) and
   call `/api/v1/url-risk` directly.
 
-The REST and MCP endpoints intentionally remain open for initial testing and
-share the anonymous daily scan limit. Before wider MSP use, set
+The REST endpoints intentionally remain open for initial testing and share the
+anonymous daily scan limit; MCP tool calls are metered by their own durable
+`MCP_DAILY_LIMIT` instead of consuming anonymous scan quota, so configuring one
+limit does not require raising the other. Before wider MSP use, set
 `COPILOT_API_KEY`; both interfaces then require `Authorization: Bearer ...`.
 
 The static `web/` application is served directly from the same Worker through
@@ -139,9 +141,11 @@ before reports enter D1, responses, exports, or share links.
 
 Anonymous daily limits (scans, MCP tool calls, and report retrievals) are
 durable in D1 and keyed by a one-way hash of the calendar date and client IP,
-so repeats cannot reset them by moving between edge locations. A repeat scan of
-a recently traced URL still counts against the daily scan limit even when the
-cached result is returned.
+so repeats cannot reset them by moving between edge locations. Each request
+counts against exactly one scope: REST scans against the scan limit, MCP tool
+calls against `MCP_DAILY_LIMIT`, report retrievals against
+`REPORT_DAILY_LIMIT`. A repeat scan of a recently traced URL still counts
+against the daily scan limit even when the cached result is returned.
 
 The site owner can exempt trusted source IPs from scan and MCP scan limits by
 setting the `RATE_LIMIT_BYPASS_IPS` Worker secret to a comma-separated list.
