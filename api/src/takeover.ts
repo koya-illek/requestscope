@@ -205,6 +205,45 @@ function matchTakeoverSignature(service: string, body: string): boolean {
 }
 
 /**
+ * Decide a takeover verdict from the probe outcome.
+ *
+ * A body signature only upgrades to `vulnerable: true` when the response also
+ * has a failure status (4xx/5xx). Platforms serve custom error content on
+ * soft-404s too, so the same phrases inside an active 2xx/3xx page are not
+ * proof of a dangling resource; they stay non-vulnerable with a manual
+ * verification note rather than an actionable accusation.
+ */
+export function evaluateTakeoverVerdict(
+  service: string,
+  httpStatus: number,
+  signatureMatched: boolean,
+  hostname: string,
+): { vulnerable: boolean; evidence: string } {
+  if (signatureMatched && httpStatus >= 400) {
+    return {
+      vulnerable: true,
+      evidence: `${service} takeover signature found in HTTP response (status ${httpStatus}) at ${hostname}`,
+    };
+  }
+  if (signatureMatched) {
+    return {
+      vulnerable: false,
+      evidence: `${service} takeover signature observed on an active HTTP ${httpStatus} response at ${hostname} — manual verification recommended`,
+    };
+  }
+  if (httpStatus === 404 || httpStatus === 410) {
+    return {
+      vulnerable: false,
+      evidence: `${service} CNAME with HTTP ${httpStatus} — potential dangling resource (manual verification recommended)`,
+    };
+  }
+  return {
+    vulnerable: false,
+    evidence: `${service} CNAME resolves and HTTP returned ${httpStatus} — resource appears active`,
+  };
+}
+
+/**
  * Read up to MAX_BODY_BYTES from a Response body as text.
  */
 async function readBodyLimited(response: Response): Promise<string> {
@@ -293,7 +332,6 @@ async function probeSubdomain(
       : { response: await fetch(`https://${subdomain}`, { redirect: "manual", signal: AbortSignal.timeout(PROBE_TIMEOUT) }), url: new URL(`https://${subdomain}`) };
 
     const httpStatus = response.status;
-    const isErrorStatus = httpStatus === 404 || httpStatus === 410;
 
     // Read response body for signature matching
     let body = "";
@@ -303,37 +341,19 @@ async function probeSubdomain(
       // Body read failed — we still have the status code
     }
 
-    // Step 4: Check for takeover signatures in the response body
-    if (matchTakeoverSignature(match.service, body)) {
-      return {
-        subdomain,
-        cname,
-        resolvable: true,
-        httpStatus,
-        vulnerable: true,
-        evidence: `${match.service} takeover signature found in HTTP response (status ${httpStatus}) at ${url.hostname}`,
-      };
-    }
-
-    // Conservative: error status + matching CNAME pattern = potentially vulnerable
-    if (isErrorStatus) {
-      return {
-        subdomain,
-        cname,
-        resolvable: true,
-        httpStatus,
-        vulnerable: false,
-        evidence: `${match.service} CNAME with HTTP ${httpStatus} — potential dangling resource (manual verification recommended)`,
-      };
-    }
-
+    // Step 4: Combine status and signature evidence into a conservative verdict
+    const outcome = evaluateTakeoverVerdict(
+      match.service,
+      httpStatus,
+      matchTakeoverSignature(match.service, body),
+      url.hostname,
+    );
     return {
       subdomain,
       cname,
       resolvable: true,
       httpStatus,
-      vulnerable: false,
-      evidence: `${match.service} CNAME resolves and HTTP returned ${httpStatus} — resource appears active`,
+      ...outcome,
     };
   } catch (error) {
     const msg = error instanceof Error ? error.message : "HTTP probe failed";
