@@ -28,8 +28,8 @@ const TAKEOVER_TIMEOUT = 5_000;
 const MAX_TAKEOVER_PROBES = 20;
 
 const URL_PATTERN = /(?:https?:)?\/\/([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)(?::\d+)?(?:\/[^\s"'<>`)]*)?/gi;
-const WS_PATTERN = /wss?:\/\/([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)(?::\d+)?(?:\/[^\s"'<>`)]]*)?/gi;
-const FETCH_CALL_PATTERN = /(?:fetch|axios|XMLHttpRequest|\.open)\s*\(\s*['"`]?(?:https?:)?\/\/([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)/gi;
+const WS_PATTERN = /wss?:\/\/([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)(?::\d+)?(?:\/[^\s"'<>`)]*)?/gi;
+const FETCH_CALL_PATTERN = /\b(?:fetch|axios|XMLHttpRequest)\s*\(\s*['"`]?(?:https?:)?\/\/([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)/gi;
 
 export interface DepsProgress {
   stage: string;

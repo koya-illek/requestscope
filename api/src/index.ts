@@ -52,7 +52,6 @@ export default {
           version: API_VERSION,
           sourceRevision: env.SOURCE_REVISION || "uncommitted-source",
           databaseSchemaVersion: 1,
-          environment: env.ENVIRONMENT,
           protection: "rate-limit",
           reputationProviders: {
             googleWebRisk: Boolean(env.GOOGLE_WEB_RISK_API_KEY),
@@ -109,6 +108,7 @@ export default {
 
       const match = url.pathname.match(/^\/api\/scans\/([A-Za-z0-9_-]+)(\/export)?$/);
       if (match && request.method === "GET") {
+        if (request.headers.get("Origin") && !origin) return json({ error: "Origin not allowed" }, 403, cors);
         if (!REPORT_ID.test(match[1])) return json({ error: "Report not found" }, 404, cors);
         await enforceScopedDailyRateLimit(request, env, "report", clampInt(env.REPORT_DAILY_LIMIT, 120, 1, 5000), "Daily report retrieval limit");
         const report = await loadReport(env.DB, match[1]);
@@ -134,7 +134,7 @@ export default {
   },
 
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(cleanExpired(env.DB));
+    ctx.waitUntil(cleanExpired(env.DB).catch((error) => console.error("cleanup_failed", error)));
   },
 };
 
@@ -306,9 +306,22 @@ function streamScan(
   cors: Record<string, string>,
 ): Response {
   const encoder = new TextEncoder();
+  // A client disconnect (tab close, proxy timeout) makes enqueue reject; the
+  // flag turns every later send/close into a no-op so the disconnect cannot
+  // cascade out of start(). The scan itself keeps running so the report is
+  // still persisted for its share link.
+  let clientClosed = false;
+  request.signal?.addEventListener("abort", () => { clientClosed = true; }, { once: true });
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (value: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(value)}\n`));
+      const send = (value: unknown) => {
+        if (clientClosed) return;
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify(value)}\n`));
+        } catch {
+          clientClosed = true;
+        }
+      };
       try {
         send({ type: "progress", stage: "accepted", message: "Trace accepted" });
         const report = await createScan(request, input, env, ctx, (event) => send({ type: "progress", ...event }));
@@ -317,8 +330,17 @@ function streamScan(
         const normalized = normalizeError(error);
         send({ type: "error", error: normalized.message, status: normalized.status });
       } finally {
-        controller.close();
+        if (!clientClosed) {
+          try {
+            controller.close();
+          } catch {
+            clientClosed = true;
+          }
+        }
       }
+    },
+    cancel() {
+      clientClosed = true;
     },
   });
   return new Response(stream, {
