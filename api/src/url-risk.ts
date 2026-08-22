@@ -121,7 +121,7 @@ export function assessUrlRisk(
   }
 
   if (report.http.finalStatus === null || report.status === "failed") {
-    add(findings, "incomplete-observation", "low", 0, "Destination could not be fully inspected", "A failed or blocked fetch limits the assessment; absence of other findings is not evidence of safety.", { scanStatus: report.status }, "high");
+    add(findings, "incomplete-observation", "low", 0, "Destination could not be fully inspected", "A failed or blocked fetch limits the assessment; absence of other findings is not evidence of safety.", { scanStatus: report.status }, "medium");
   }
 
   for (const provider of reputation.providers.filter((item) => item.status === "matched")) {
@@ -225,11 +225,27 @@ function matchLookalike(label: string, candidate: string, aliases: string[]): Lo
   return null;
 }
 
+/** Tokens that, when combined with a brand name in the same hostname label,
+ * suggest impersonation rather than an ordinary compound word. Without this
+ * gate, benign domains like `apple-orchard.com` or `office-supplies.ie`
+ * would earn brand-lookalike findings for everyday English aliases such as
+ * "apple" or "office". */
+const RISK_CONTEXT_TOKENS: ReadonlySet<string> = new Set([
+  "login", "logins", "signin", "signins", "signup", "secure", "security",
+  "verify", "verification", "account", "accounts", "auth", "confirm",
+  "billing", "payment", "payments", "update", "recovery", "reset",
+  "wallet", "invoice", "alert", "alerts", "notice", "notification",
+  "support", "helpdesk", "mail", "webmail", "id", "session",
+]);
+
 /** Match a brand name as a whole separator-delimited word inside the first
- * hostname label, e.g. "microsoft-login" or "secure-paypal". */
+ * hostname label, e.g. "microsoft-login" or "secure-paypal". At least one of
+ * the remaining tokens must be risk-related so that ordinary compound words
+ * are not reported as impersonation. */
 function containsBrandToken(label: string, alias: string): boolean {
   const tokens = label.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-  return tokens.length > 1 && tokens.includes(alias);
+  if (tokens.length < 2 || !tokens.includes(alias)) return false;
+  return tokens.some((token) => token !== alias && RISK_CONTEXT_TOKENS.has(token));
 }
 
 function editDistanceWithinOne(candidate: string, brand: string): boolean {

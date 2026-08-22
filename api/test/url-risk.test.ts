@@ -75,6 +75,29 @@ describe("URL risk assessment", () => {
     expect(lookalike?.confidence).toBe("medium");
   });
 
+  it("does not flag ordinary compound words that merely share a brand alias", () => {
+    for (const host of ["apple-orchard.com", "office-supplies.ie", "amazon-river-tours.com", "stripe-curtains.ie"]) {
+      const result = assessUrlRisk(report(host), `https://${host}/`);
+      expect(result.findings.some((finding) => finding.code === "brand-lookalike"), host).toBe(false);
+      expect(result.verdict, host).toBe("low");
+      expect(result.confidence, host).toBe("high");
+    }
+  });
+
+  it("still flags compound lookalikes that carry risk-context tokens", () => {
+    const result = assessUrlRisk(report("secure-stripe-billing.net"), "https://secure-stripe-billing.net/");
+    const lookalike = result.findings.find((finding) => finding.code === "brand-lookalike");
+    expect(lookalike?.evidence.matchedName).toBe("stripe");
+    expect(lookalike?.evidence.matchType).toBe("name-containment");
+  });
+
+  it("marks an incomplete observation with medium confidence", () => {
+    const failed = report("example.com", { status: "failed" });
+    const result = assessUrlRisk(failed, "https://example.com/");
+    const incomplete = result.findings.find((finding) => finding.code === "incomplete-observation");
+    expect(incomplete?.confidence).toBe("medium");
+  });
+
   it("does not invent a lookalike finding for an organisation without known domains", () => {
     const result = assessUrlRisk(report(), "https://example.com/", { claimedOrganisation: "Example" });
     expect(result.verdict).toBe("low");
