@@ -129,11 +129,19 @@ The REST and MCP endpoints intentionally remain open for initial testing and
 share the anonymous daily scan limit. Before wider MSP use, set
 `COPILOT_API_KEY`; both interfaces then require `Authorization: Bearer ...`.
 
-The Worker root redirects human visitors to the Pages application.
+The static `web/` application is served directly from the same Worker through
+Cloudflare Workers Assets; there is no separate Pages deployment and no root
+redirect.
 
 Reports expire after 14 days by default. No raw visitor IP address is stored.
 Query parameter names are retained for evidence, but their values are redacted
 before reports enter D1, responses, exports, or share links.
+
+Anonymous daily limits (scans, MCP tool calls, and report retrievals) are
+durable in D1 and keyed by a one-way hash of the calendar date and client IP,
+so repeats cannot reset them by moving between edge locations. A repeat scan of
+a recently traced URL still counts against the daily scan limit even when the
+cached result is returned.
 
 The site owner can exempt trusted source IPs from scan and MCP scan limits by
 setting the `RATE_LIMIT_BYPASS_IPS` Worker secret to a comma-separated list.

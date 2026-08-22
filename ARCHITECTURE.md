@@ -121,7 +121,7 @@ MCP publishes `trace_request`, `assess_url_risk`, and `get_requestscope_report`.
 - D1 stores versioned, redacted report JSON and indexed lifecycle fields.
 - Reports expire after 14 days by default.
 - A daily Cron Trigger deletes expired reports and old quota state.
-- Valid report reads and MCP discovery or handshake requests do not create durable quota writes.
+- MCP discovery or handshake requests do not create durable quota writes; validated MCP tool calls, scans, and report retrievals are accounted durably in D1.
 - Reputation results use the Cloudflare Cache API. Raw provider payloads and provider credentials are not stored in reports.
 - Report links are bearer links. Anyone holding an unexpired identifier can retrieve the report.
 
