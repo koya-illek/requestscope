@@ -12,6 +12,7 @@ const TYPE_NAMES: Record<number, string> = {
   15: "MX",
   16: "TXT",
   28: "AAAA",
+  46: "RRSIG",
   257: "CAA",
 };
 
