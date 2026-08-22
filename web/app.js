@@ -6,6 +6,14 @@
   const $$ = (selector) => [...document.querySelectorAll(selector)];
   const state = { report: null, progressStep: 0, routeStep: 0, progressStages: [], rawUrl: null };
 
+  const REPORT_ID_PATTERN = /^[A-Za-z0-9_-]{16}$/;
+  const IDLE_TIMEOUT_MS = 45_000;
+  const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+
+  let inFlight = false;
+  let cancelRequested = false;
+  let activeController = null;
+
   const form = $("#trace-form");
   const input = $("#url-input");
   const traceButton = $("#trace-button");
@@ -32,8 +40,17 @@
     control?.addEventListener("input", updateAdvancedOptionState)
   );
   updateAdvancedOptionState();
-  $("#new-trace").addEventListener("click", reset);
-  $("#error-close").addEventListener("click", () => errorPanel.classList.add("hidden"));
+  $("#new-trace").addEventListener("click", () => reset());
+  $("#error-close").addEventListener("click", () => {
+    errorPanel.classList.add("hidden");
+    const id = location.hash.slice(1);
+    if (id && !REPORT_ID_PATTERN.test(id)) history.replaceState(state.historyState ?? null, "", location.pathname + location.search);
+  });
+  $("#error-new-trace").addEventListener("click", () => reset());
+  $("#cancel-trace").addEventListener("click", () => {
+    cancelRequested = true;
+    activeController?.abort();
+  });
   $("#copy-link").addEventListener("click", copyShareLink);
   $("#export-json").addEventListener("click", exportJson);
   $("#cloudflare-scan").addEventListener("click", openCloudflareScan);
@@ -47,6 +64,17 @@
     $$(".filter").forEach((item) => item.classList.toggle("active", item === button));
     renderDependencies(button.dataset.filter);
   }));
+  window.addEventListener("hashchange", () => {
+    if (inFlight) return;
+    const id = location.hash.slice(1);
+    if (REPORT_ID_PATTERN.test(id)) {
+      if (state.report?.id !== id || reportPanel.classList.contains("hidden")) loadReport(id);
+    } else if (!id) {
+      if (state.report) reset(false);
+    } else {
+      showError("That report link looks incomplete or invalid.", "INVALID_LINK");
+    }
+  });
 
   function updateAdvancedOptionState() {
     const selected = Number(Boolean(mapDepsCheckbox?.checked))
@@ -58,7 +86,7 @@
   async function configureProviderAvailability() {
     try {
       const response = await fetch(`${API_BASE}/api/health`, { headers: { Accept: "application/json" } });
-      if (!response.ok) return;
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const health = await response.json();
       const configured = Object.entries(health.reputationProviders || {}).filter(([, enabled]) => enabled).map(([name]) => name);
       if (configured.length === 0) {
@@ -67,21 +95,40 @@
         $("#reputation-toggle-text small").textContent = "Provider credentials are not configured on this deployment.";
       }
     } catch {
-      // A health-check failure must not prevent the core trace UI from loading.
+      // A health-check failure must not prevent the core trace UI from loading,
+      // but the status pill should stop claiming readiness.
+      $(".status-link").classList.add("degraded");
+      $("#status-text").textContent = "Observer status unavailable";
     }
   }
+
   async function runTrace(url) {
-    if (!url.trim()) return;
+    if (inFlight || !url.trim()) return;
+    inFlight = true;
+    cancelRequested = false;
     state.rawUrl = url.trim();
     beginProgress();
     errorPanel.classList.add("hidden");
     reportPanel.classList.add("hidden");
     $("#dep-map-panel").classList.add("hidden");
     traceButton.disabled = true;
+    const controller = new AbortController();
+    activeController = controller;
+    let idleTimedOut = false;
+    let idleTimer = 0;
+    const armIdleTimer = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        idleTimedOut = true;
+        controller.abort();
+      }, IDLE_TIMEOUT_MS);
+    };
+    armIdleTimer();
     try {
       const response = await fetch(`${API_BASE}/api/scans/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           url: url.trim(),
           mapDependencies: mapDepsCheckbox.checked,
@@ -91,51 +138,93 @@
         })
       });
       if (!response.ok || !response.body) throw new Error(`Trace failed with HTTP ${response.status}`);
-      const payload = await readTraceStream(response);
+      const payload = await readTraceStream(response, armIdleTimer);
       finishProgress();
       displayReport(payload, true);
     } catch (error) {
       stopProgress();
-      showError(error.message || "The trace could not be completed.");
+      if (error.name === "AbortError") {
+        showError(cancelRequested
+          ? "Trace cancelled."
+          : "The trace stalled with no updates for 45 seconds and was cancelled. Please try again.");
+      } else if (error instanceof TypeError) {
+        showError("Network request failed. Check your connection and try again.");
+      } else {
+        showError(error.message || "The trace could not be completed.");
+      }
     } finally {
+      clearTimeout(idleTimer);
+      activeController = null;
+      inFlight = false;
       traceButton.disabled = false;
     }
   }
 
   async function loadReport(id) {
+    if (inFlight) return;
+    inFlight = true;
+    cancelRequested = false;
     state.rawUrl = null;
-    beginProgress("Loading saved report");
+    beginProgress("Loading saved report", true);
+    errorPanel.classList.add("hidden");
+    const controller = new AbortController();
+    activeController = controller;
     try {
-      const response = await fetch(`${API_BASE}/api/scans/${encodeURIComponent(id)}`);
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Saved report could not be loaded.");
+      const response = await fetch(`${API_BASE}/api/scans/${encodeURIComponent(id)}`, { signal: controller.signal });
+      if (!response.ok) {
+        let message = `Saved report could not be loaded (HTTP ${response.status}).`;
+        try {
+          const payload = await response.json();
+          if (payload && typeof payload.error === "string") message = payload.error;
+        } catch {
+          // Non-JSON error body; keep the generic HTTP message.
+        }
+        throw new Error(message);
+      }
+      const payload = await response.json().catch(() => {
+        throw new Error("Received an invalid response from the server.");
+      });
       finishProgress();
       displayReport(payload, false);
     } catch (error) {
       stopProgress();
-      showError(error.message);
+      if (error.name === "AbortError") {
+        showError(cancelRequested ? "Loading cancelled." : "Loading the saved report timed out. Please try again.");
+      } else if (error instanceof TypeError) {
+        showError("Network request failed. Check your connection and try again.");
+      } else {
+        showError(error.message || "Saved report could not be loaded.");
+      }
+    } finally {
+      activeController = null;
+      inFlight = false;
     }
   }
 
-  function beginProgress(title = "Tracing request path") {
+  function beginProgress(title = "Tracing request path", minimal = false) {
     state.progressStep = 0;
     state.routeStep = 0;
-    state.progressStages = [
-      { key: "input", label: "Validate target" },
-      { key: "dns", label: "Resolve DNS" },
-      { key: "edge", label: "Follow redirects" },
-      { key: "page", label: "Inspect page" },
-      ...(mapDepsCheckbox.checked ? [{ key: "deps", label: "Map dependencies" }] : []),
-      ...(externalReputationCheckbox.checked ? [{ key: "reputation", label: "Check reputation" }] : []),
-      { key: "report", label: "Build report" }
-    ];
-    const stepsEl = $("#progress-steps");
-    stepsEl.innerHTML = state.progressStages.map((step) => `<li>${escapeHtml(step.label)}</li>`).join("");
+    progressPanel.classList.toggle("minimal", minimal);
+    if (minimal) {
+      state.progressStages = [];
+      $("#progress-steps").innerHTML = "";
+    } else {
+      state.progressStages = [
+        { key: "input", label: "Validate target" },
+        { key: "dns", label: "Resolve DNS" },
+        { key: "edge", label: "Follow redirects" },
+        { key: "page", label: "Inspect page" },
+        ...(mapDepsCheckbox.checked ? [{ key: "deps", label: "Map dependencies" }] : []),
+        ...(externalReputationCheckbox.checked ? [{ key: "reputation", label: "Check reputation" }] : []),
+        { key: "report", label: "Build report" }
+      ];
+      $("#progress-steps").innerHTML = state.progressStages.map((step) => `<li>${escapeHtml(step.label)}</li>`).join("");
+    }
     $("#progress-title").textContent = title;
     progressPanel.classList.remove("hidden");
-    $("#progress-bar").style.width = "8%";
+    $("#progress-bar").style.width = minimal ? "40%" : "8%";
     updateProgressSteps();
-    progressPanel.scrollIntoView({ behavior: "smooth", block: "center" });
+    scrollToEl(progressPanel);
   }
 
   function updateProgressSteps() {
@@ -157,7 +246,7 @@
   }
 
   function finishProgress() {
-    state.progressStep = state.progressStages.length - 1;
+    state.progressStep = Math.max(0, state.progressStages.length - 1);
     state.routeStep = 6;
     updateProgressSteps();
     $("#progress-bar").style.width = "100%";
@@ -168,17 +257,24 @@
     progressPanel.classList.add("hidden");
   }
 
-  function showError(message) {
+  function showError(message, code = "TRACE_FAILED") {
+    $("#error-code").textContent = code;
     $("#error-message").textContent = message;
     errorPanel.classList.remove("hidden");
-    errorPanel.scrollIntoView({ behavior: "smooth", block: "center" });
+    $("#error-title").focus({ preventScroll: true });
+    scrollToEl(errorPanel);
   }
 
   function displayReport(report, updateLocation) {
     state.report = report;
     $("#report-host").textContent = report.hostname;
     $("#report-url").textContent = report.finalUrl || report.normalizedUrl;
-    $("#report-url").href = report.finalUrl || report.normalizedUrl;
+    const reportHref = safeHref(report.finalUrl || report.normalizedUrl);
+    if (reportHref) {
+      $("#report-url").href = reportHref;
+    } else {
+      $("#report-url").removeAttribute("href");
+    }
     const vantage = [report.observation.colo, report.observation.country].filter(Boolean).join(", ");
     const coverage = report.coverage;
     const coverageText = coverage
@@ -195,9 +291,13 @@
     $$(".filter").forEach((item) => item.classList.toggle("active", item.dataset.filter === "all"));
     renderDepMap(report.dependencyMap);
     reportPanel.classList.remove("hidden");
-    if (updateLocation) history.pushState({ reportId: report.id }, "", `#${report.id}`);
+    $("#report-host").focus({ preventScroll: true });
+    if (updateLocation) {
+      history.pushState({ reportId: report.id }, "", `#${report.id}`);
+      state.historyState = { reportId: report.id };
+    }
     document.title = `${report.hostname}: RequestScope`;
-    setTimeout(() => reportPanel.scrollIntoView({ behavior: "smooth", block: "start" }), 280);
+    setTimeout(() => scrollToEl(reportPanel, "start"), 280);
   }
 
   function renderMetrics(report) {
@@ -224,14 +324,14 @@
     }
     panel.classList.remove("hidden");
     const verdict = $("#risk-verdict");
-    verdict.textContent = `${risk.verdict.toUpperCase()} · ${risk.riskScore}/100`;
-    verdict.className = `risk-verdict ${risk.verdict}`;
+    verdict.textContent = `${String(risk.verdict).toUpperCase()} · ${risk.riskScore}/100`;
+    verdict.className = `risk-verdict ${enumToken(risk.verdict, ["low", "medium", "high"])}`;
     $("#risk-summary").innerHTML = `<strong>${escapeHtml(risk.summary)}</strong><span>${escapeHtml(risk.confidence)} confidence · ${risk.findings.length} evidence item${risk.findings.length === 1 ? "" : "s"}</span>`;
     renderReputation(risk.reputation);
     $("#risk-findings").innerHTML = risk.findings.length
-      ? risk.findings.map((item) => `<article class="risk-finding ${item.severity}">
-          <span>${escapeHtml(item.severity.toUpperCase())}</span>
-          <div><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.detail)}</p><code>${escapeHtml(item.code)} · ${escapeHtml(item.source)} · +${item.score}</code></div>
+      ? risk.findings.map((item) => `<article class="risk-finding ${enumToken(item.severity, ["low", "medium", "high"])}">
+          <span>${escapeHtml(String(item.severity).toUpperCase())}</span>
+          <div><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.detail)}</p><code>${escapeHtml(item.code)} · ${escapeHtml(item.source)} · +${Number(item.score) || 0}</code></div>
         </article>`).join("")
       : `<p class="dns-empty">No strong risk indicators were observed.</p>`;
     $("#risk-boundary").textContent = risk.limitations.join(" ");
@@ -244,12 +344,12 @@
       return;
     }
     const providers = reputation.providers || [];
-    target.innerHTML = `<div class="reputation-head"><strong>External reputation</strong><span class="reputation-status ${escapeAttr(reputation.status)}">${escapeHtml(reputation.status.replaceAll("_", " ").toUpperCase())}</span></div>
+    target.innerHTML = `<div class="reputation-head"><strong>External reputation</strong><span class="reputation-status ${enumToken(reputation.status, ["matched", "not_listed", "partial", "unavailable", "not_configured", "not_requested"])}">${escapeHtml(String(reputation.status).replaceAll("_", " ").toUpperCase())}</span></div>
       <p>${escapeHtml(reputation.detail)}</p>` + (providers.length
-        ? `<div class="provider-list">${providers.map((provider) => `<article class="provider-result ${escapeAttr(provider.status)}">
+        ? `<div class="provider-list">${providers.map((provider) => `<article class="provider-result ${enumToken(provider.status, ["matched", "not_listed", "inconclusive", "unavailable", "quota_limited", "not_configured"])}">
             <div><strong>${escapeHtml(providerName(provider.provider))}</strong><span>${escapeHtml(provider.target)} · ${escapeHtml(provider.hostname)}</span></div>
             <p>${escapeHtml(provider.detail)}</p>
-            ${provider.status === "matched" ? `<a href="${escapeAttr(provider.advisoryUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(provider.attribution)}</a>` : ""}
+            ${provider.status === "matched" && safeHref(provider.advisoryUrl) ? `<a href="${escapeAttr(provider.advisoryUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(provider.attribution)}</a>` : ""}
           </article>`).join("")}</div>`
         : "");
   }
@@ -277,7 +377,7 @@
           <div class="hop-detail">${details.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
         </div>
         <div class="hop-status">
-          <span class="status-code ${codeClass}">${hop.status || "ERR"}</span>
+          <span class="status-code ${codeClass}">${Number.isFinite(hop.status) && hop.status !== 0 ? hop.status : "ERR"}</span>
           <span class="elapsed">${formatMs(hop.elapsedMs)}</span>
         </div>
       </article>`;
@@ -287,38 +387,45 @@
   function renderDns(queries) {
     $("#dns-results").innerHTML = queries.map((query) => {
       const answers = query.answers.length
-        ? query.answers.map((answer) => `<div class="dns-answer"><span>${escapeHtml(answer.type)}</span><code>${escapeHtml(answer.data)}</code><span>${answer.ttl}s</span></div>`).join("")
+        ? query.answers.map((answer) => `<div class="dns-answer"><span>${escapeHtml(answer.type)}</span><code>${escapeHtml(answer.data)}</code><span>${Number(answer.ttl) || 0}s</span></div>`).join("")
         : `<div class="dns-empty">${escapeHtml(query.error || (query.status === 0 ? "No records returned" : `DNS status ${query.status}`))}</div>`;
       return `<div class="dns-group">
-        <div class="dns-title"><strong>${escapeHtml(query.type)} · ${escapeHtml(query.name)}</strong><span>${query.elapsedMs}ms${query.authenticatedData ? " · DNSSEC AD" : ""}</span></div>
+        <div class="dns-title"><strong>${escapeHtml(query.type)} · ${escapeHtml(query.name)}</strong><span>${Number(query.elapsedMs) || 0}ms${query.authenticatedData ? " · DNSSEC AD" : ""}</span></div>
         ${answers}
       </div>`;
     }).join("");
   }
 
   function renderFindings(findings) {
-    $("#findings").innerHTML = findings.length ? findings.map((item) => `<article class="finding ${item.severity}">
+    $("#findings").innerHTML = findings.length ? findings.map((item) => `<article class="finding ${enumToken(item.severity, ["info", "positive", "warning", "critical"])}">
       <span class="finding-dot" aria-hidden="true"></span>
+      <span class="visually-hidden">${escapeHtml(item.severity)}</span>
       <div><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.detail)}</p><code>${escapeHtml(item.evidencePath)} · ${escapeHtml(item.confidence)} confidence</code></div>
     </article>`).join("") : `<div class="dns-group"><p class="dns-empty">No derived findings were generated.</p></div>`;
   }
 
   function renderDependencySummary(dependencies) {
     $("#dependency-summary").innerHTML = `
-      <span><strong>${dependencies.total}</strong> HTML references</span>
-      <span><strong>${dependencies.firstParty}</strong> first-party</span>
-      <span><strong>${dependencies.thirdParty}</strong> third-party</span>
+      <span><strong>${Number(dependencies.total) || 0}</strong> HTML references</span>
+      <span><strong>${Number(dependencies.firstParty) || 0}</strong> first-party</span>
+      <span><strong>${Number(dependencies.thirdParty) || 0}</strong> third-party</span>
       <span><strong>${dependencies.uniqueHosts.length}</strong> hosts</span>`;
   }
 
   function renderDependencies(filter = "all") {
     if (!state.report) return;
     const items = state.report.dependencies.items.filter((item) => filter === "all" || item.party === filter);
-    $("#dependencies").innerHTML = items.length ? items.map((item) => `<div class="dependency">
-      <span class="type">${escapeHtml(item.type)}</span>
-      <a href="${escapeAttr(item.url)}" target="_blank" rel="noopener noreferrer" title="${escapeAttr(item.url)}">${escapeHtml(item.url)}</a>
-      <span class="party">${escapeHtml(item.party)}</span>
-    </div>`).join("") : `<div class="dns-group"><p class="dns-empty">No matching resource references were extracted from the inspected HTML.</p></div>`;
+    $("#dependencies").innerHTML = items.length ? items.map((item) => {
+      const href = safeHref(item.url);
+      const url = href
+        ? `<a href="${escapeAttr(item.url)}" target="_blank" rel="noopener noreferrer" title="${escapeAttr(item.url)}">${escapeHtml(item.url)}</a>`
+        : `<span title="${escapeAttr(item.url)}">${escapeHtml(item.url)}</span>`;
+      return `<div class="dependency">
+        <span class="type">${escapeHtml(item.type)}</span>
+        ${url}
+        <span class="party">${escapeHtml(item.party)}</span>
+      </div>`;
+    }).join("") : `<div class="dns-group"><p class="dns-empty">No matching resource references were extracted from the inspected HTML.</p></div>`;
   }
 
   async function copyShareLink() {
@@ -334,6 +441,7 @@
 
   function exportJson() {
     if (!state.report) return;
+    flashButton($("#export-json"), "Export started");
     const anchor = document.createElement("a");
     anchor.href = `${API_BASE}/api/scans/${encodeURIComponent(state.report.id)}/export`;
     anchor.download = `requestscope-${state.report.id}.json`;
@@ -343,18 +451,18 @@
   function openCloudflareScan() {
     if (!state.report) return;
     const target = state.rawUrl || state.report.finalUrl || state.report.normalizedUrl;
-    const approved = confirm("Cloudflare retains URL Scanner reports and may make them public. Do not continue with authenticated, private, password-reset, or token-bearing URLs. Open Cloudflare's public scanner with this URL?");
+    const approved = confirm("Cloudflare retains URL Scanner reports and may make them public. Do not continue with authenticated, private, password-reset, or token-bearing URLs; query values are sent exactly as typed. Open Cloudflare's public scanner with this URL?");
     if (!approved) return;
     window.open(`https://radar.cloudflare.com/scan?url=${encodeURIComponent(target)}`, "_blank", "noopener,noreferrer");
   }
 
-  function reset() {
+  function reset(pushHistory = true) {
     state.report = null;
     state.rawUrl = null;
     reportPanel.classList.add("hidden");
     errorPanel.classList.add("hidden");
     $("#dep-map-panel").classList.add("hidden");
-    history.pushState({}, "", location.pathname);
+    if (pushHistory) history.pushState({}, "", location.pathname);
     document.title = "RequestScope: See the journey behind a URL";
     input.value = "";
     claimedOrganisation.value = "";
@@ -362,17 +470,23 @@
     externalReputationCheckbox.checked = false;
     updateQueryWarning();
     input.focus();
-    scrollTo({ top: 0, behavior: "smooth" });
+    scrollToEl(document.body, "start");
   }
 
   function flashButton(button, text) {
-    const original = button.textContent;
+    if (!button.dataset.label) button.dataset.label = button.textContent;
     button.textContent = text;
-    setTimeout(() => { button.textContent = original; }, 1400);
+    clearTimeout(Number(button.dataset.timer || 0));
+    button.dataset.timer = String(setTimeout(() => {
+      button.textContent = button.dataset.label;
+      delete button.dataset.label;
+      delete button.dataset.timer;
+    }, 1400));
   }
 
   function formatMs(value) {
-    return value >= 1000 ? `${(value / 1000).toFixed(2)}s` : `${value}ms`;
+    const milliseconds = Number(value) || 0;
+    return milliseconds >= 1000 ? `${(milliseconds / 1000).toFixed(2)}s` : `${milliseconds}ms`;
   }
 
   function escapeHtml(value) {
@@ -383,19 +497,42 @@
     return escapeHtml(value).replace(/`/g, "&#96;");
   }
 
-  async function readTraceStream(response) {
+  /** Only http(s) URLs become links: dependency URLs come from inspected
+   * third-party pages, so schemes like javascript: must never render. */
+  function safeHref(value) {
+    const candidate = String(value ?? "").trim();
+    return /^https?:\/\//i.test(candidate) ? candidate : null;
+  }
+
+  /** Server-computed enums drive CSS classes; map anything unexpected to a
+   * harmless token instead of interpolating it into markup. */
+  function enumToken(value, allowed) {
+    return allowed.includes(value) ? value : "unknown";
+  }
+
+  function scrollToEl(element, block = "center") {
+    element.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block });
+  }
+
+  async function readTraceStream(response, onActivity = () => {}) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
     let report = null;
     while (true) {
       const { done, value } = await reader.read();
+      onActivity();
       buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";
       for (const line of lines) {
         if (!line.trim()) continue;
-        const event = JSON.parse(line);
+        let event;
+        try {
+          event = JSON.parse(line);
+        } catch {
+          throw new Error("Received an invalid response from the server.");
+        }
         if (event.type === "progress") applyProgress(event);
         if (event.type === "result") report = event.report;
         if (event.type === "error") throw new Error(event.error || "Trace failed.");
@@ -499,7 +636,7 @@
         d.postAuthOnly ? `<span class="dep-flag dep-flag-auth" title="Not observed in the initial HTML; dynamic visibility was not measured">NOT IN INITIAL HTML</span>` : "",
       ].filter(Boolean).join("");
       return `<div class="dep-domain">
-        <span class="dep-cat dep-cat-${escapeHtml(d.category)}">${escapeHtml(d.category)}</span>
+        <span class="dep-cat dep-cat-${enumToken(d.category, DEP_CATEGORIES)}">${escapeHtml(d.category)}</span>
         <span class="dep-host" title="${escapeAttr(d.evidence.join("; "))}">${escapeHtml(d.domain)}</span>
         ${svc}
         <span class="dep-src">${escapeHtml(d.source)}</span>
@@ -510,6 +647,12 @@
     // Takeover
     renderTakeover(depMap.takeover || []);
   }
+
+  const DEP_CATEGORIES = [
+    "functional", "analytics", "advertising", "cdn", "payment", "communication",
+    "monitoring", "security", "marketing", "social", "testing", "video",
+    "auth", "consent", "hosting", "unknown"
+  ];
 
   function renderSsl(ssl) {
     if (!ssl) {
@@ -538,7 +681,7 @@
     }
     $("#dep-sdks").innerHTML = `<div class="sdk-list">${sdks.map(s =>
       `<div class="sdk-item">
-        <span class="dep-cat dep-cat-${escapeHtml(s.category)}">${escapeHtml(s.category)}</span>
+        <span class="dep-cat dep-cat-${enumToken(s.category, DEP_CATEGORIES)}">${escapeHtml(s.category)}</span>
         <span class="sdk-name">${escapeHtml(s.name)}</span>
         <span class="sdk-domain">${escapeHtml(s.domain)}</span>
       </div>`
@@ -568,5 +711,9 @@
   }
 
   const initialId = location.hash.slice(1);
-  if (/^[A-Za-z0-9_-]{16}$/.test(initialId)) loadReport(initialId);
+  if (REPORT_ID_PATTERN.test(initialId)) {
+    loadReport(initialId);
+  } else if (initialId) {
+    showError("That report link looks incomplete or invalid.", "INVALID_LINK");
+  }
 })();

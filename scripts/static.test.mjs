@@ -30,7 +30,10 @@ test("public shell exposes metadata, keyboard navigation and privacy", async () 
   assert.ok(html.includes("Google Web Risk and PhishTank receive the complete original and final URL"));
   assert.ok(html.includes("How RequestScope works"));
   assert.ok(html.includes("Check reputation with consent"));
-  assert.ok(html.includes("Public deep scan"));
+  assert.ok(html.includes("Scan on Cloudflare Radar"));
+  assert.ok(html.includes("<noscript>"));
+  assert.ok(html.includes('id="query-warning" role="status"'));
+  assert.ok(html.includes('aria-labelledby="method-dialog-title"'));
   assert.ok(headers.includes("static.cloudflareinsights.com"));
   assert.ok(!html.includes("challenges.cloudflare.com"));
   assert.ok(!html.includes("turnstile-widget"));
