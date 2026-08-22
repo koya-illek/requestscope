@@ -532,12 +532,28 @@ const PII_CATEGORIES: ReadonlySet<DomainCategory> = new Set([
 /* -------------------------------------------------------------------------- */
 
 /**
+ * Domain patterns compiled to require a hostname label boundary at the start
+ * of every match: a pattern may only match from the start of the hostname or
+ * immediately after a dot. Without this, suffix alternatives such as `x\.com$`
+ * also match the tail of unrelated hosts like `netflix.com` or `box.com`.
+ */
+const LABEL_BOUNDARY = "(?:^|\\.)";
+const ANCHORED_DOMAIN_PATTERNS: Array<[RegExp, string, DomainCategory]> = DOMAIN_DATABASE.map(
+  ([pattern, name, category]) => [
+    new RegExp(`${LABEL_BOUNDARY}(?:${pattern.source.trim()})`, pattern.flags.replace(/[gy]/g, "")),
+    name,
+    category,
+  ],
+);
+
+/**
  * Classify a hostname into a category and identify the service.
- * Matching is case-insensitive against the full hostname.
+ * Matching is case-insensitive against the full hostname and can only begin
+ * on a label boundary.
  */
 export function classifyDomain(domain: string): DomainMatch {
   const lower = domain.toLowerCase().trim();
-  for (const [pattern, name, category] of DOMAIN_DATABASE) {
+  for (const [pattern, name, category] of ANCHORED_DOMAIN_PATTERNS) {
     if (pattern.test(lower)) {
       return { category, name };
     }
@@ -574,21 +590,30 @@ export function detectSdks(jsSource: string): SdkMatch[] {
 export function assessPiiRisk(domain: string, category: DomainCategory): boolean {
   // Always trust category-based assessment first
   if (PII_CATEGORIES.has(category)) return true;
-  // Fall back to domain regex for edge cases (e.g. "unknown" category
-  // but domain is a known analytics vendor not in the database)
-  const lower = domain.toLowerCase();
-  if (PII_FALLBACK.test(lower)) return true;
-  return false;
+  // Fall back to exact token matches for edge cases (e.g. an "unknown"
+  // category host whose labels name a known data-collecting pattern).
+  const tokens = domain.toLowerCase().split(".").flatMap((label) => label.split(/[-_]+/));
+  return tokens.some((token) => PII_FALLBACK_TOKENS.has(token));
 }
 
-const PII_FALLBACK = /analytics|track|pixel|telemetry|beacon|collect|insight/i;
+/** Exact-label tokens that indicate a possible data-collecting service.
+ * Substring matching was rejected: it flagged innocuous hosts such as
+ * `trackandfield.ie` or `soundtrack-cdn.example.com`. */
+const PII_FALLBACK_TOKENS: ReadonlySet<string> = new Set([
+  "analytics",
+  "tracker",
+  "tracking",
+  "telemetry",
+  "beacon",
+  "pixel",
+]);
 
 /**
  * Quick membership check — does this hostname match anything in the database?
  */
 export function isKnownDomain(domain: string): boolean {
   const lower = domain.toLowerCase().trim();
-  for (const [pattern] of DOMAIN_DATABASE) {
+  for (const [pattern] of ANCHORED_DOMAIN_PATTERNS) {
     if (pattern.test(lower)) return true;
   }
   return false;
