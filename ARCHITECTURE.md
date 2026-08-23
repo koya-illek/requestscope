@@ -157,6 +157,6 @@ RequestScope does not execute a full browser, submit forms, authenticate to targ
 - Unit and contract tests: `npm test`
 - Desktop and narrow browser flow: `npm run test:browser`
 - Release provenance and Worker bundle: `npm run deploy:api -- --dry-run`
-- Production smoke: `scripts/production-smoke.mjs`
+- Production release smoke: `npm run smoke:production -- --report-id <non-sensitive-report-id>`
 - REST schema: `web/openapi.yaml`
 - MCP connector schema: `web/mcp-copilot.yaml`

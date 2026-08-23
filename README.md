@@ -96,6 +96,19 @@ The deploy command refuses a dirty working tree and binds the current 12-charact
 git revision as `SOURCE_REVISION`. Use `npm run deploy:api -- --dry-run` to inspect
 the Worker bundle and bindings without publishing it.
 
+After deployment, run the complete read-only release check from the released commit:
+
+```bash
+npm run smoke:production -- --report-id <non-sensitive-report-id>
+```
+
+The check requires Lighthouse on `PATH`. It verifies that `/api/health` reports the
+current commit, checks the MCP security headers, and exercises the home, privacy,
+and optional report pages at 390, 768, and 1440 pixels. It also checks console and
+request failures, horizontal overflow, axe accessibility results, and Lighthouse
+release thresholds. Use `--revision <git-revision>` only when verifying an older
+release. Use `--skip-lighthouse` only for a partial diagnostic run.
+
 PhishTank currently permits API calls without an application key, but assigns a
 lower provider-side request limit. Set `PHISHTANK_KEYLESS_ENABLED = "true"` and
 use a conservative `PHISHTANK_DAILY_LIMIT` when registration is unavailable.
