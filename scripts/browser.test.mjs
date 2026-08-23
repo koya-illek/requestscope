@@ -249,6 +249,21 @@ assert.equal(await linkPage.textContent("#error-code"), "INVALID_LINK");
 await linkPage.click("#error-close");
 assert.equal(await linkPage.locator("#error-panel.hidden").count(), 1);
 await linkPage.evaluate(() => location.hash = "");
+
+// In-page anchors (status pill, skip link, section targets) also change the
+// hash; they are navigation, so they must never raise the invalid-link error.
+await linkPage.click(".status-link");
+await linkPage.waitForFunction(() => location.hash === "#status");
+await linkPage.waitForTimeout(50);
+assert.equal(await linkPage.locator("#error-panel:not(.hidden)").count(), 0, "the status pill must not raise the invalid-link error");
+await linkPage.evaluate(() => location.hash = "#main-content");
+await linkPage.waitForTimeout(50);
+assert.equal(await linkPage.locator("#error-panel:not(.hidden)").count(), 0, "skip-link navigation must not raise the invalid-link error");
+// The skip link must move sequential focus to the main landmark.
+await linkPage.goto(pathToFileURL(path.resolve(webRoot, "index.html")).href);
+await linkPage.keyboard.press("Tab");
+await linkPage.keyboard.press("Enter");
+await linkPage.waitForFunction(() => document.activeElement?.id === "main-content");
 await linkContext.close();
 
 // The submit control must agree with the inFlight guard while a shared

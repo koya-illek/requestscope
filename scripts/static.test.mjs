@@ -117,6 +117,26 @@ test("consent-critical flows are designed dialogs, not blocking prompts", async 
   assert.ok(!/\bprompt\s*\(/.test(app), "app.js must not fall back to prompt()");
 });
 
+test("hash navigation only validates hashes that name no element on the page", async () => {
+  const [app, html] = await Promise.all([read("app.js"), read("index.html")]);
+  // The status pill and skip link change the hash to #status/#main-content;
+  // treating every non-report hash as a broken report link would raise the
+  // error panel on ordinary navigation. Both load paths must resolve element
+  // ids first.
+  const invalidLinkShows = app.split("\n").filter((line) => line.includes("looks incomplete or invalid"));
+  assert.equal(invalidLinkShows.length, 2, "initial-load and hashchange paths must share the invalid-link copy");
+  for (const line of invalidLinkShows) {
+    const preceding = app.slice(0, app.indexOf(line));
+    const branch = preceding.slice(preceding.lastIndexOf("} else if"));
+    assert.match(
+      branch,
+      /document\.getElementById/,
+      "every invalid-link branch must first rule out in-page anchors",
+    );
+  }
+  assert.match(html, /<main id="main-content" tabindex="-1">/, "the main landmark must receive focus from the skip link");
+});
+
 test("the Inter variable font is self-hosted, preloaded, and CSP-allowed", async () => {
   const [html, privacy, headers, styles] = await Promise.all([
     read("index.html"),

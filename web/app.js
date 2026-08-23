@@ -96,9 +96,14 @@
     const id = location.hash.slice(1);
     if (REPORT_ID_PATTERN.test(id)) {
       if (state.report?.id !== id || reportPanel.classList.contains("hidden")) loadReport(id);
-    } else if (!id) {
+      return;
+    }
+    // The status pill, skip link, and section anchors all change the hash;
+    // a hash that names an element on this page is navigation, not a broken
+    // report link, so only unknown hashes surface the invalid-link notice.
+    if (!id) {
       if (state.report) reset(false);
-    } else {
+    } else if (!document.getElementById(id)) {
       showError("That report link looks incomplete or invalid.", "INVALID_LINK");
     }
   });
@@ -803,7 +808,7 @@
   const initialId = location.hash.slice(1);
   if (REPORT_ID_PATTERN.test(initialId)) {
     loadReport(initialId);
-  } else if (initialId) {
+  } else if (initialId && !document.getElementById(initialId)) {
     showError("That report link looks incomplete or invalid.", "INVALID_LINK");
   }
 })();

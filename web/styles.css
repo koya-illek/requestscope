@@ -56,6 +56,9 @@ a { color: inherit; }
   text-decoration: none;
 }
 .skip-link:focus { transform: none; }
+/* The skip link moves sequential focus to the main landmark; the container
+ * itself must not paint a focus ring for that programmatic handoff. */
+main[tabindex="-1"]:focus { outline: none; }
 .hidden { display: none !important; }
 .visually-hidden {
   position: absolute !important;
