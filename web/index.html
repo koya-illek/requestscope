@@ -317,11 +317,11 @@
     <p class="dialog-footnote">RequestScope does not probe private networks, submit forms, bypass authentication, or test for exploitable vulnerabilities.</p>
   </dialog>
 
-  <dialog id="radar-dialog" aria-labelledby="radar-dialog-title">
+  <dialog id="radar-dialog" aria-labelledby="radar-dialog-title" aria-describedby="radar-dialog-warning">
     <button class="dialog-close" id="radar-close" type="button" aria-label="Close">×</button>
     <h2 id="radar-dialog-title">Open Cloudflare Radar?</h2>
     <p class="dialog-copy">Cloudflare retains URL Scanner reports and may make them public.</p>
-    <p class="dialog-warning">Do not continue with authenticated, private, password reset, or token-bearing URLs. Query values are sent exactly as typed.</p>
+    <p class="dialog-warning" id="radar-dialog-warning">Do not continue with authenticated, private, password reset, or token-bearing URLs. Query values are sent exactly as typed.</p>
     <div class="dialog-actions">
       <button class="secondary-button" id="radar-cancel" type="button">Keep it local</button>
       <button class="primary-button" id="radar-confirm" type="button" autofocus>Open Cloudflare Radar</button>
