@@ -117,17 +117,6 @@ a { color: inherit; }
 .status-link > span:first-child { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent); flex-shrink: 0; }
 .status-link.degraded > span:first-child { background: var(--warning); box-shadow: 0 0 12px var(--warning); }
 .hero { padding: 116px 0 80px; position: relative; }
-.section-kicker {
-  display: none;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 22px;
-  color: var(--muted);
-  font: 500 12px/1 var(--mono);
-  letter-spacing: .15em;
-  text-transform: uppercase;
-}
-.section-kicker span { color: var(--accent); }
 h1 {
   max-width: 920px;
   margin: 0;
@@ -582,13 +571,6 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .takeover-detail code { font: 400 10px/1.3 var(--mono); color: var(--muted); }
 .takeover-detail span { font: 400 10px/1.4 var(--mono); }
 
-.dep-map-source-grid {
-  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0;
-  border-bottom: 1px solid var(--line);
-}
-.dep-map-source { padding: 18px 20px; border-right: 1px solid var(--line); }
-.dep-map-source:last-child { border-right: 0; }
-.dep-map-source h4 { margin: 0 0 10px; font: 500 11px/1 var(--mono); color: var(--accent); text-transform: uppercase; letter-spacing: .1em; }
 .dep-directive { margin-bottom: 8px; }
 .dep-d-name { display: inline-block; min-width: 80px; color: var(--accent); font: 500 10px/1.4 var(--mono); }
 .dep-directive code { color: var(--muted); font: 400 10px/1.4 var(--mono); overflow-wrap: anywhere; }
@@ -625,10 +607,6 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .dep-flag-pii { background: rgba(255, 198, 92, .15); color: var(--warning); }
 .dep-flag-auth { background: rgba(126, 188, 255, .15); color: var(--info); }
 
-@media (max-width: 850px) {
-  .dep-map-source-grid { grid-template-columns: 1fr; }
-  .dep-map-source { border-right: 0; border-bottom: 1px solid var(--line); }
-}
 @media (max-width: 760px) {
   .dep-domain { grid-template-columns: 90px minmax(0, 1fr); }
   .dep-src, .dep-flag { grid-column: 2; justify-self: end; }
