@@ -58,10 +58,9 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/ScanRequest' } } }
       responses:
-        '200': { description: NDJSON progress events ending with the complete report, content: { application/x-ndjson: { schema: { type: string } } } }
-        '400': { description: Invalid input }
-        '403': { description: Disallowed or non-public target }
-        '429': { description: Request limit reached }
+        '200': { description: NDJSON progress events ending with the complete report. Blocked targets, rate limits, and trace failures are delivered in-band as error events rather than HTTP status codes., content: { application/x-ndjson: { schema: { type: string } } } }
+        '400': { description: Invalid input before streaming starts }
+        '403': { description: Disallowed browser origin before streaming starts }
   /api/scans/{reportId}:
     get:
       operationId: getRequestScopeReport
@@ -161,14 +160,13 @@ components:
         endpoints: { type: object, additionalProperties: { type: string } }
     HealthResponse:
       type: object
-      required: [ok, service, version, sourceRevision, databaseSchemaVersion, environment, protection, reputationProviders, time]
+      required: [ok, service, version, sourceRevision, databaseSchemaVersion, protection, reputationProviders, time]
       properties:
         ok: { type: boolean }
         service: { type: string }
         version: { type: string }
         sourceRevision: { type: string }
         databaseSchemaVersion: { type: integer, enum: [1] }
-        environment: { type: string }
         protection: { type: string }
         reputationProviders:
           type: object
