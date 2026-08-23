@@ -253,31 +253,39 @@ export function evaluateTakeoverVerdict(
 /**
  * Read up to MAX_BODY_BYTES from a Response body as text.
  */
-async function readBodyLimited(response: Response): Promise<string> {
+async function readBodyLimited(response: Response, budget?: RequestBudget): Promise<string> {
   const reader = response.body?.getReader();
-  if (!reader) {
-    return (await response.text()).slice(0, MAX_BODY_BYTES);
-  }
+  if (!reader) return "";
 
   const decoder = new TextDecoder();
   let body = "";
   let bytesRead = 0;
 
-  while (bytesRead < MAX_BODY_BYTES) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const remaining = MAX_BODY_BYTES - bytesRead;
-    const chunk = value.byteLength > remaining ? value.slice(0, remaining) : value;
-    bytesRead += chunk.byteLength;
-    body += decoder.decode(chunk, { stream: bytesRead < MAX_BODY_BYTES });
-    if (chunk.byteLength < value.byteLength) {
-      await reader.cancel();
-      break;
+  try {
+    while (bytesRead < MAX_BODY_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) {
+        body += decoder.decode();
+        return body;
+      }
+      const remaining = MAX_BODY_BYTES - bytesRead;
+      const requested = Math.min(value.byteLength, remaining);
+      const accepted = budget ? budget.inspectBytes(requested) : requested;
+      if (accepted > 0) {
+        body += decoder.decode(value.subarray(0, accepted), { stream: true });
+        bytesRead += accepted;
+      }
+      if (accepted < value.byteLength) {
+        await reader.cancel();
+        break;
+      }
     }
+    await reader.cancel();
+    body += decoder.decode();
+    return body;
+  } finally {
+    reader.releaseLock();
   }
-  body += decoder.decode(); // flush
-
-  return body;
 }
 
 /**
@@ -314,7 +322,7 @@ async function probeSubdomain(
     // Read response body for signature matching
     let body = "";
     try {
-      body = await readBodyLimited(response);
+      body = await readBodyLimited(response, budget);
     } catch {
       // Body read failed — we still have the status code
     }

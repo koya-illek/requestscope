@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { evaluateTakeoverVerdict, matchTakeoverSignature, matchVulnerablePattern, probeTakeover } from "../src/takeover";
+import { RequestBudget } from "../src/budget";
 
 describe("takeover verdict evaluation", () => {
   it("marks a signature on a failure status as vulnerable", () => {
@@ -102,6 +103,35 @@ describe("probeTakeover result contract", () => {
     expect(results[0]?.cname).toBe("rs8-probe.webflow.io");
     expect(results[0]?.vulnerable).toBe(true);
     expect(results[0]?.httpStatus).toBe(404);
+    vi.unstubAllGlobals();
+  });
+
+  it("charges inspected takeover response bytes to the request-wide budget", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (url.hostname === "cloudflare-dns.com") {
+        const name = url.searchParams.get("name");
+        return Response.json({
+          Status: 0,
+          Answer: [{ name, type: 5, TTL: 300, data: "site.webflow.io." }],
+        });
+      }
+      return new Response("x".repeat(200), { status: 404 });
+    }));
+
+    const budget = new RequestBudget({ maxBodyBytes: 32 });
+    const validatedHosts = new Map([["dangling.example.com", {
+      hostname: "dangling.example.com",
+      addresses: ["93.184.216.34"],
+      queries: [],
+    }]]);
+    await probeTakeover(["dangling.example.com"], budget, validatedHosts);
+
+    expect(budget.snapshot()).toMatchObject({
+      bodyBytesInspected: 32,
+      exhausted: true,
+      exhaustionReason: "response body budget reached",
+    });
     vi.unstubAllGlobals();
   });
 });
