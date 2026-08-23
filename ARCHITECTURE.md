@@ -126,7 +126,7 @@ MCP publishes `trace_request`, `assess_url_risk`, and `get_requestscope_report`.
 
 ## Resource and failure model
 
-One scan has an application budget of 45 external subrequests, six concurrent subrequests, 1 MiB aggregate inspected body data, and a 15-second application deadline. The main response is capped at 256 KiB, dependency records at 100, and JavaScript inspection at 512 KiB.
+One scan has an application budget of 45 external subrequests, six concurrent subrequests, 1 MiB aggregate inspected body data, and a 15-second application deadline. The main response is capped at 256 KiB, dependency records at 100, JavaScript inspection at 512 KiB per bundle, and Certificate Transparency responses at 4 MiB.
 
 DNS disagreement, target failure, provider failure, truncation, skipped optional work, and budget exhaustion are represented in coverage rather than silently treated as clean results. D1 persistence failure prevents issuance of a shareable report.
 
