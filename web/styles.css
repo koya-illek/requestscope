@@ -785,3 +785,41 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     transition-duration: .01ms !important;
   }
 }
+
+/* Printing exists for one artifact: the stored evidence report. Remap the
+ * palette through its tokens for white paper, drop the application chrome,
+ * and keep evidence rows intact across page breaks. */
+@media print {
+  :root {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f4f6f5;
+    --line: #c8d3cd;
+    --line-bright: #9dafa6;
+    --text: #15211c;
+    --muted: #49594f;
+    --accent: #0b7a45;
+    --accent-2: #0b7a45;
+    --warning: #8a5800;
+    --critical: #a31226;
+    --info: #0b5cad;
+  }
+  body { background: #fff; }
+  .grid-field, .skip-link, .site-header, .hero, .progress-panel, .error-panel,
+  .principles, .developer-access, footer, .report-actions, .filter-set,
+  .dialog-close { display: none !important; }
+  /* Dark translucent surfaces would sit on white paper as unreadable slabs. */
+  .panel, .reputation-results, .hop-header-list, .principle-grid article { background: #fff; }
+  .observation-note, .deps-toggle, .trace-options, .risk-context { background: none; }
+  .dns-empty, .reputation-consent, .risk-context > p, .risk-boundary,
+  .dep-src, .takeover-detail span, .dep-flag-auth, .dep-svc, .dependency .party { color: var(--muted); }
+  .input-shell button, .primary-button { color: #fff; }
+  .metric strong.good, .status-code:not(.redirect):not(.error), .section-number,
+  .dns-title strong, .observation-note strong, .dep-d-name, .brand > span:last-child span { color: var(--accent); }
+  .report-header h2, .hop-main strong, .report-header > div > a { letter-spacing: normal; }
+  .hop-main strong, .report-header > div > a { white-space: normal; overflow-wrap: anywhere; }
+  .hop, .finding, .risk-finding, .provider-result, .dep-domain, .sdk-item,
+  .takeover-row, .metric, .ssl-row, .dns-group { break-inside: avoid; }
+  .panel-header, .section-heading { break-after: avoid; }
+  a { text-decoration: underline; }
+}

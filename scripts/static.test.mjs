@@ -199,6 +199,19 @@ test("shipped asset weights stay inside the performance budget", async () => {
   assert.ok(totalRaw <= 140 * 1024, `combined payload is ${totalRaw} bytes; total budget is ${140 * 1024}`);
 });
 
+test("the evidence report survives printing to paper", async () => {
+  const styles = await read("styles.css");
+  const printBlock = styles.slice(styles.indexOf("@media print"));
+  assert.ok(printBlock.length > 1, "styles.css must carry a print stylesheet");
+  // The report is the printable artifact; application chrome must not spend
+  // toner, and the dark palette must remap for white paper.
+  for (const hidden of [".site-header", ".hero", ".developer-access", "footer", ".report-actions"]) {
+    assert.ok(printBlock.includes(hidden), `print styles must hide ${hidden}`);
+  }
+  assert.match(printBlock, /--bg: #ffffff/, "print must remap the palette tokens for white paper");
+  assert.match(printBlock, /break-inside: avoid/, "evidence rows must not split across pages");
+});
+
 test("version identifiers live in one module and match package.json", async () => {
   const [pkg, version, index, analyzer, mcp] = await Promise.all([
     readFile(new URL("../api/package.json", import.meta.url), "utf8"),
