@@ -69,7 +69,6 @@ export const DOMAIN_DATABASE: Array<[RegExp, string, DomainCategory]> = [
   /* ----------------------------- Analytics -------------------------------- */
   [/google-analytics\.com$/i, "Google Analytics", "analytics"],
   [/googletagmanager\.com$/i, "Google Tag Manager", "analytics"],
-  [/googletag\.services\.com$|googletagservices\.com$/i, "Google Tag Manager", "analytics"],
   [/hotjar\.com$/i, "Hotjar", "analytics"],
   [/mixpanel\.com$/i, "Mixpanel", "analytics"],
   [/amplitude\.com$/i, "Amplitude", "analytics"],
@@ -228,7 +227,7 @@ export const DOMAIN_DATABASE: Array<[RegExp, string, DomainCategory]> = [
   [/appdynamics\.com$|appdynamics\.net$/i, "AppDynamics", "monitoring"],
   [/newrelic\.com$|nr-data\.net$/i, "New Relic", "monitoring"],
   [/logrocket\.com$|lr-cdn\.com$/i, "LogRocket", "monitoring"],
-  [/ honeycomb\.io$/i, "Honeycomb", "monitoring"],
+  [/honeycomb\.io$/i, "Honeycomb", "monitoring"],
   [/grafana\.net$|grafana\.com$|grafana\.org$/i, "Grafana", "monitoring"],
   [/pingdom\.net$|pingdom\.com$|pingdomcdn\.net$/i, "Pingdom", "monitoring"],
   [/uptimerobot\.com$/i, "UptimeRobot", "monitoring"],

@@ -40,6 +40,26 @@ describe("domain classification label boundary", () => {
     expect(classifyDomain("www.revenue.ie").name).toBe("Revenue IE");
     expect(classifyDomain("bankofireland.com").name).toBe("Bank of Ireland");
   });
+
+  it("lets the advertising entry own googletagservices.com", () => {
+    // An earlier analytics entry shadowed this domain; Google Tag Manager and
+    // Google Ad Manager are different services with different data roles.
+    expect(classifyDomain("www.googletagservices.com")).toEqual({
+      category: "advertising",
+      name: "Google Ad Manager",
+    });
+    expect(classifyHostname("ads.googletagservices.com")).toEqual({
+      category: "advertising",
+      name: "Google Ad Manager",
+    });
+  });
+
+  it("recognises Honeycomb hosts", () => {
+    expect(classifyDomain("api.honeycomb.io")).toEqual({
+      category: "monitoring",
+      name: "Honeycomb",
+    });
+  });
 });
 
 describe("PII fallback heuristics", () => {
