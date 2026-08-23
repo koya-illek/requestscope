@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { mapDependencies } from "../src/deps";
+import { mapDependencies, MAX_CT_RESPONSE_BYTES } from "../src/deps";
 
 describe("mapDependencies", () => {
   it("parses CSP headers and extracts domains", async () => {
@@ -161,5 +161,48 @@ describe("mapDependencies", () => {
     expect(pusher).toBeDefined();
     expect(pusher?.postAuthOnly).toBe(true);
     expect(pusher?.source).toBe("js-bundle");
+  });
+
+  it("fails the CT analysis honestly when the crt.sh response exceeds the inspection cap", async () => {
+    const oversized = `[{"name_value":"a.example.com"},"${"x".repeat(1024)}"` + ",1".repeat(MAX_CT_RESPONSE_BYTES);
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (url.hostname === "crt.sh") {
+        return new Response(oversized, { headers: { "Content-Type": "application/json" } });
+      }
+      return new Response("", { status: 404 });
+    }));
+
+    const result = await mapDependencies(
+      "example.com",
+      new URL("https://example.com"),
+      {},
+      [],
+    );
+
+    expect(result.sources.certTransparency.failed).toBe(1);
+    expect(result.sources.certTransparency.truncated).toBe(true);
+    expect(result.sources.certTransparency.error).toMatch(/inspection cap/);
+    expect(result.sources.certTransparency.subdomains).toEqual([]);
+  });
+
+  it("reports invalid CT JSON as a failed analysis instead of throwing", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (url.hostname === "crt.sh") {
+        return new Response("<html>maintenance</html>", { headers: { "Content-Type": "text/html" } });
+      }
+      return new Response("", { status: 404 });
+    }));
+
+    const result = await mapDependencies(
+      "example.com",
+      new URL("https://example.com"),
+      {},
+      [],
+    );
+
+    expect(result.sources.certTransparency.failed).toBe(1);
+    expect(result.sources.certTransparency.error).toMatch(/not valid JSON/);
   });
 });

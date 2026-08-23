@@ -22,10 +22,13 @@ import type {
 const MAX_JS_BUNDLES = 15;
 const MAX_BUNDLE_BYTES = 512 * 1024;
 const MAX_CT_RESULTS = 100;
+// crt.sh returns one JSON array for every certificate that ever logged a name
+// under the apex, which reaches tens of MB on busy domains. Parse only what
+// fits this cap; anything larger becomes an explicit failed analysis instead
+// of an unbounded memory read inside the isolate.
+export const MAX_CT_RESPONSE_BYTES = 4 * 1024 * 1024;
 const FETCH_TIMEOUT = 8_000;
 const CT_TIMEOUT = 12_000;
-const TAKEOVER_TIMEOUT = 5_000;
-const MAX_TAKEOVER_PROBES = 20;
 
 const URL_PATTERN = /(?:https?:)?\/\/([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)(?::\d+)?(?:\/[^\s"'<>`)]*)?/gi;
 const WS_PATTERN = /wss?:\/\/([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)(?::\d+)?(?:\/[^\s"'<>`)]*)?/gi;
@@ -376,7 +379,16 @@ async function queryCertTransparency(hostname: string, budget?: RequestBudget): 
       return { attempted: 1, successful: 0, failed: 1, skipped: 0, subdomains: [], total: 0, error: `crt.sh returned HTTP ${response.status}` };
     }
 
-    const data = await response.json<Array<{ name_value: string; common_name?: string; not_before?: string; not_after?: string }>>();
+    const body = await readBoundedText(response.body?.getReader() || null, MAX_CT_RESPONSE_BYTES);
+    if (body.truncated) {
+      return { attempted: 1, successful: 0, failed: 1, skipped: 0, subdomains: [], total: 0, truncated: true, error: `Certificate Transparency response exceeded the ${MAX_CT_RESPONSE_BYTES / (1024 * 1024)} MiB inspection cap.` };
+    }
+    let data: Array<{ name_value: string; common_name?: string; not_before?: string; not_after?: string }>;
+    try {
+      data = JSON.parse(body.text) as typeof data;
+    } catch {
+      return { attempted: 1, successful: 0, failed: 1, skipped: 0, subdomains: [], total: 0, error: "Certificate Transparency response was not valid JSON." };
+    }
     const subdomains = new Set<string>();
     const certificates = data
       .filter((entry) => entry.not_before && entry.not_after)
@@ -445,5 +457,33 @@ function addDomain(
       occurrences: 1,
       evidence: [evidence],
     });
+  }
+}
+
+/** Read a response body as text up to `limit` bytes. `truncated` marks a body
+ * that reached the cap before EOF; the reader is cancelled so the remainder
+ * is never buffered. */
+async function readBoundedText(reader: ReadableStreamDefaultReader<Uint8Array> | null, limit: number): Promise<{ text: string; truncated: boolean }> {
+  if (!reader) return { text: "", truncated: false };
+  const decoder = new TextDecoder();
+  let text = "";
+  let total = 0;
+  try {
+    while (total < limit) {
+      const { done, value } = await reader.read();
+      if (done) return { text: text + decoder.decode(), truncated: false };
+      const remaining = limit - total;
+      const accepted = Math.min(remaining, value.byteLength);
+      text += decoder.decode(value.subarray(0, accepted), { stream: accepted === value.byteLength });
+      total += accepted;
+      if (accepted < value.byteLength) {
+        await reader.cancel();
+        return { text, truncated: true };
+      }
+    }
+    await reader.cancel();
+    return { text, truncated: true };
+  } finally {
+    reader.releaseLock();
   }
 }
