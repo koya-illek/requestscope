@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 const read = (name) => readFile(new URL(`../web/${name}`, import.meta.url), "utf8");
@@ -115,6 +115,24 @@ test("consent-critical flows are designed dialogs, not blocking prompts", async 
   assert.ok(app.includes("#radar-confirm") && app.includes("#radar-cancel"));
   assert.ok(!/\bconfirm\s*\(/.test(app), "app.js must not open blocking confirm() prompts");
   assert.ok(!/\bprompt\s*\(/.test(app), "app.js must not fall back to prompt()");
+});
+
+test("the Inter variable font is self-hosted, preloaded, and CSP-allowed", async () => {
+  const [html, privacy, headers, styles] = await Promise.all([
+    read("index.html"),
+    read("privacy.html"),
+    read("_headers"),
+    read("styles.css"),
+  ]);
+  await assert.doesNotReject(() => access(new URL("../web/fonts/inter-latin-wght-normal.woff2", import.meta.url)));
+  for (const page of [html, privacy]) {
+    assert.match(page, /rel="preload" href="\.\/fonts\/inter-latin-wght-normal\.woff2" as="font"/);
+  }
+  const csp = headers.match(/Content-Security-Policy: (.+)/)?.[1] || "";
+  assert.match(csp, /font-src 'self'/);
+  assert.match(styles, /@font-face/);
+  assert.match(styles, /font-family: "Inter Variable";/);
+  assert.ok(styles.indexOf("--sans: \"Inter Variable\"") !== -1, "Inter Variable must lead the sans stack");
 });
 
 test("the report UI renders each hop's captured response headers", async () => {
