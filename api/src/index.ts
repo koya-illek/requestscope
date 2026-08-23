@@ -16,127 +16,138 @@ const RECENT_SCAN_TTL = 300;
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    const url = new URL(request.url);
-    const origin = allowedOrigin(request, env.ALLOWED_ORIGINS || "");
-    const cors = corsHeaders(origin);
-
-    if (request.method === "OPTIONS") {
-      if (request.headers.get("Origin") && !origin) return json({ error: "Origin not allowed" }, 403);
-      return new Response(null, { status: 204, headers: cors });
+    const response = await routeRequest(request, env, ctx);
+    // Monitors and link checkers probe read endpoints with HEAD (curl -I).
+    // Answer it with exactly the GET headers and no body.
+    if (request.method === "HEAD") {
+      return new Response(null, { status: response.status, headers: response.headers });
     }
-
-    try {
-      if ((url.pathname === "/api" || url.pathname === "/api/") && request.method === "GET") {
-        return json({
-          service: "RequestScope API",
-          version: API_VERSION,
-          sourceRevision: env.SOURCE_REVISION || "uncommitted-source",
-          databaseSchemaVersion: 1,
-          website: "https://requestscope.illek.ie/",
-          endpoints: {
-            health: "GET /api/health",
-            createScan: "POST /api/scans",
-            streamScan: "POST /api/scans/stream",
-            getScan: "GET /api/scans/:id",
-            exportScan: "GET /api/scans/:id/export",
-            urlRisk: "POST /api/v1/url-risk",
-            mcp: "POST /mcp (also /mcp/v2)",
-          },
-        }, 200, cors);
-      }
-
-      if (url.pathname === "/api/health" && request.method === "GET") {
-        return json({
-          ok: true,
-          service: "requestscope-api",
-          version: API_VERSION,
-          sourceRevision: env.SOURCE_REVISION || "uncommitted-source",
-          databaseSchemaVersion: 1,
-          protection: "rate-limit",
-          reputationProviders: {
-            googleWebRisk: Boolean(env.GOOGLE_WEB_RISK_API_KEY),
-            phishTank: env.PHISHTANK_KEYLESS_ENABLED === "true" || Boolean(env.PHISHTANK_APP_KEY),
-            cloudflareFamilyDns: env.CLOUDFLARE_FAMILY_DNS_ENABLED === "true",
-          },
-          time: new Date().toISOString(),
-        }, 200, cors);
-      }
-
-      if ((url.pathname === "/api/scans" || url.pathname === "/api/scans/stream") && request.method === "POST") {
-        if (request.headers.get("Origin") && !origin) return json({ error: "Origin not allowed" }, 403, cors);
-        const input = await readScanInput(request);
-        if (url.pathname.endsWith("/stream")) {
-          return streamScan(request, input, env, ctx, cors);
-        }
-        const report = await createScan(request, input, env, ctx);
-        return json(report, 201, { ...cors, "Cache-Control": "no-store" });
-      }
-
-      if (url.pathname === "/api/v1/url-risk" && request.method === "POST") {
-        if (request.headers.get("Origin") && !origin) return json({ error: "Origin not allowed" }, 403, cors);
-        if (!await authorizedRiskRequest(request, env)) return json({ error: "Invalid API credential" }, 401, cors);
-        const input = await readRiskInput(request);
-        const report = await createScan(request, input, env, ctx);
-        return json(report.urlRisk, 200, { ...cors, "Cache-Control": "no-store" });
-      }
-
-      if (url.pathname === "/mcp" || url.pathname === "/mcp/v2") {
-        if (request.headers.get("Origin") && !origin) return json({ error: "Origin not allowed" }, 403, cors);
-        if (!await authorizedRiskRequest(request, env)) return json({ error: "Invalid API credential" }, 401, cors);
-        return handleMcp(request, async (tool, args) => {
-          if (tool === "get_requestscope_report") {
-            const reportId = String(args.reportId || "");
-            if (!REPORT_ID.test(reportId)) throw new InputError("A valid 16-character report ID is required.");
-            const stored = await loadReport(env.DB, reportId);
-            if (!stored) throw new InputError("Report not found or expired.");
-            return stored;
-          }
-          const input = {
-            url: String(args.url || ""),
-            mapDependencies: tool === "trace_request" ? args.mapDependencies !== false : false,
-            claimedOrganisation: args.claimedOrganisation as string | undefined,
-            messageContext: args.messageContext as string | undefined,
-            externalReputation: args.externalReputation === true,
-          };
-          const report = await createScan(request, input, env, ctx, () => {}, { chargeAnonymousScanQuota: false });
-          return tool === "assess_url_risk" ? report.urlRisk! : report;
-        }, {
-          beforeToolCall: async () => enforceScopedDailyRateLimit(request, env, "mcp", clampInt(env.MCP_DAILY_LIMIT, 200, 1, 5000), "Daily MCP request limit"),
-          corsHeaders: cors,
-        });
-      }
-
-      const match = url.pathname.match(/^\/api\/scans\/([A-Za-z0-9_-]+)(\/export)?$/);
-      if (match && request.method === "GET") {
-        if (request.headers.get("Origin") && !origin) return json({ error: "Origin not allowed" }, 403, cors);
-        if (!REPORT_ID.test(match[1])) return json({ error: "Report not found" }, 404, cors);
-        await enforceScopedDailyRateLimit(request, env, "report", clampInt(env.REPORT_DAILY_LIMIT, 120, 1, 5000), "Daily report retrieval limit");
-        const report = await loadReport(env.DB, match[1]);
-        if (!report) return json({ error: "Report not found or expired" }, 404, cors);
-        if (match[2]) {
-          return new Response(JSON.stringify(report, null, 2), {
-            headers: {
-              ...cors,
-              "Content-Type": "application/json; charset=utf-8",
-              "Content-Disposition": `attachment; filename="requestscope-${report.id}.json"`,
-              "Cache-Control": "private, max-age=60",
-              ...securityHeaders(),
-            },
-          });
-        }
-        return json(report, 200, { ...cors, "Cache-Control": "private, max-age=60" });
-      }
-
-      return json({ error: "Not found" }, 404, cors);
-    } catch (error) {
-      return errorResponse(error, cors);
-    }
+    return response;
   },
 
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(cleanExpired(env.DB).catch((error) => console.error("cleanup_failed", error)));
   },
 };
+
+async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const isRead = request.method === "GET" || request.method === "HEAD";
+  const url = new URL(request.url);
+  const origin = allowedOrigin(request, env.ALLOWED_ORIGINS || "");
+  const cors = corsHeaders(origin);
+
+  if (request.method === "OPTIONS") {
+    if (request.headers.get("Origin") && !origin) return json({ error: "Origin not allowed" }, 403);
+    return new Response(null, { status: 204, headers: cors });
+  }
+
+  try {
+    if ((url.pathname === "/api" || url.pathname === "/api/") && isRead) {
+      return json({
+        service: "RequestScope API",
+        version: API_VERSION,
+        sourceRevision: env.SOURCE_REVISION || "uncommitted-source",
+        databaseSchemaVersion: 1,
+        website: "https://requestscope.illek.ie/",
+        endpoints: {
+          health: "GET /api/health",
+          createScan: "POST /api/scans",
+          streamScan: "POST /api/scans/stream",
+          getScan: "GET /api/scans/:id",
+          exportScan: "GET /api/scans/:id/export",
+          urlRisk: "POST /api/v1/url-risk",
+          mcp: "POST /mcp (also /mcp/v2)",
+        },
+      }, 200, cors);
+    }
+
+    if (url.pathname === "/api/health" && isRead) {
+      return json({
+        ok: true,
+        service: "requestscope-api",
+        version: API_VERSION,
+        sourceRevision: env.SOURCE_REVISION || "uncommitted-source",
+        databaseSchemaVersion: 1,
+        protection: "rate-limit",
+        reputationProviders: {
+          googleWebRisk: Boolean(env.GOOGLE_WEB_RISK_API_KEY),
+          phishTank: env.PHISHTANK_KEYLESS_ENABLED === "true" || Boolean(env.PHISHTANK_APP_KEY),
+          cloudflareFamilyDns: env.CLOUDFLARE_FAMILY_DNS_ENABLED === "true",
+        },
+        time: new Date().toISOString(),
+      }, 200, cors);
+    }
+
+    if ((url.pathname === "/api/scans" || url.pathname === "/api/scans/stream") && request.method === "POST") {
+      if (request.headers.get("Origin") && !origin) return json({ error: "Origin not allowed" }, 403, cors);
+      const input = await readScanInput(request);
+      if (url.pathname.endsWith("/stream")) {
+        return streamScan(request, input, env, ctx, cors);
+      }
+      const report = await createScan(request, input, env, ctx);
+      return json(report, 201, { ...cors, "Cache-Control": "no-store" });
+    }
+
+    if (url.pathname === "/api/v1/url-risk" && request.method === "POST") {
+      if (request.headers.get("Origin") && !origin) return json({ error: "Origin not allowed" }, 403, cors);
+      if (!await authorizedRiskRequest(request, env)) return json({ error: "Invalid API credential" }, 401, cors);
+      const input = await readRiskInput(request);
+      const report = await createScan(request, input, env, ctx);
+      return json(report.urlRisk, 200, { ...cors, "Cache-Control": "no-store" });
+    }
+
+    if (url.pathname === "/mcp" || url.pathname === "/mcp/v2") {
+      if (request.headers.get("Origin") && !origin) return json({ error: "Origin not allowed" }, 403, cors);
+      if (!await authorizedRiskRequest(request, env)) return json({ error: "Invalid API credential" }, 401, cors);
+      return handleMcp(request, async (tool, args) => {
+        if (tool === "get_requestscope_report") {
+          const reportId = String(args.reportId || "");
+          if (!REPORT_ID.test(reportId)) throw new InputError("A valid 16-character report ID is required.");
+          const stored = await loadReport(env.DB, reportId);
+          if (!stored) throw new InputError("Report not found or expired.");
+          return stored;
+        }
+        const input = {
+          url: String(args.url || ""),
+          mapDependencies: tool === "trace_request" ? args.mapDependencies !== false : false,
+          claimedOrganisation: args.claimedOrganisation as string | undefined,
+          messageContext: args.messageContext as string | undefined,
+          externalReputation: args.externalReputation === true,
+        };
+        const report = await createScan(request, input, env, ctx, () => {}, { chargeAnonymousScanQuota: false });
+        return tool === "assess_url_risk" ? report.urlRisk! : report;
+      }, {
+        beforeToolCall: async () => enforceScopedDailyRateLimit(request, env, "mcp", clampInt(env.MCP_DAILY_LIMIT, 200, 1, 5000), "Daily MCP request limit"),
+        corsHeaders: cors,
+      });
+    }
+
+    const match = url.pathname.match(/^\/api\/scans\/([A-Za-z0-9_-]+)(\/export)?$/);
+    if (match && isRead) {
+      if (request.headers.get("Origin") && !origin) return json({ error: "Origin not allowed" }, 403, cors);
+      if (!REPORT_ID.test(match[1])) return json({ error: "Report not found" }, 404, cors);
+      await enforceScopedDailyRateLimit(request, env, "report", clampInt(env.REPORT_DAILY_LIMIT, 120, 1, 5000), "Daily report retrieval limit");
+      const report = await loadReport(env.DB, match[1]);
+      if (!report) return json({ error: "Report not found or expired" }, 404, cors);
+      if (match[2]) {
+        return new Response(JSON.stringify(report, null, 2), {
+          headers: {
+            ...cors,
+            "Content-Type": "application/json; charset=utf-8",
+            "Content-Disposition": `attachment; filename="requestscope-${report.id}.json"`,
+            "Cache-Control": "private, max-age=60",
+            ...securityHeaders(),
+          },
+        });
+      }
+      return json(report, 200, { ...cors, "Cache-Control": "private, max-age=60" });
+    }
+
+    return json({ error: "Not found" }, 404, cors);
+  } catch (error) {
+    return errorResponse(error, cors);
+  }
+}
 
 interface ScanInput {
   url: string;

@@ -62,6 +62,11 @@ test("public shell exposes metadata, keyboard navigation and privacy", async () 
   assert.ok(openapi.includes("/mcp/v2:"));
   assert.ok(openapi.includes("ScanCoverage"));
   assert.ok(!openapi.includes("text/event-stream"));
+  // Read endpoints answer HEAD probes with the GET headers and no body; the
+  // published contract documents the probe operations.
+  for (const probe of ["probeRequestScopeApi", "probeRequestScopeHealth", "probeRequestScopeReport", "probeRequestScopeExport"]) {
+    assert.ok(openapi.includes(`operationId: ${probe}`), `openapi must document ${probe}`);
+  }
   assert.ok(mcpConnector.includes("version: 2.2.0"));
   assert.ok(mcpConnector.includes("trace_request, assess_url_risk, and get_requestscope_report"));
   assert.ok(!mcpConnector.includes("text/event-stream"));

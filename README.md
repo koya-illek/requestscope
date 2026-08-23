@@ -55,6 +55,9 @@ GET  /api/scans/:id
 GET  /api/scans/:id/export
 ```
 
+Read endpoints also answer HEAD probes (`curl -I` health checks) with the GET
+headers and no body.
+
 `POST /api/v1/url-risk` is the stable, compact integration contract for
 Microsoft Copilot custom connectors and other automation. It follows redirects
 and returns a low, medium, or high assessment with scored evidence for URL

@@ -28,12 +28,22 @@ paths:
       summary: Discover RequestScope interfaces and endpoints
       responses:
         '200': { description: Service metadata and endpoint catalogue, content: { application/json: { schema: { $ref: '#/components/schemas/ApiDiscovery' } } } }
+    head:
+      operationId: probeRequestScopeApi
+      summary: Availability probe without a response body
+      responses:
+        '200': { description: The GET headers with an empty body }
   /api/health:
     get:
       operationId: getRequestScopeHealth
       summary: Check service and reputation-provider availability
       responses:
         '200': { description: Service health and provider configuration, content: { application/json: { schema: { $ref: '#/components/schemas/HealthResponse' } } } }
+    head:
+      operationId: probeRequestScopeHealth
+      summary: Health probe without a response body
+      responses:
+        '200': { description: The GET headers with an empty body }
   /api/scans:
     post:
       operationId: traceRequest
@@ -71,6 +81,14 @@ paths:
         '200': { description: Stored trace report, content: { application/json: { schema: { $ref: '#/components/schemas/ScanReport' } } } }
         '404': { description: Report not found or expired }
         '429': { description: Request limit reached }
+    head:
+      operationId: probeRequestScopeReport
+      summary: Report-availability probe without a response body
+      parameters:
+        - { name: reportId, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{16}$' } }
+      responses:
+        '200': { description: The GET headers with an empty body }
+        '404': { description: Report not found or expired }
   /api/scans/{reportId}/export:
     get:
       operationId: exportRequestScopeReport
@@ -81,6 +99,14 @@ paths:
         '200': { description: JSON report attachment, content: { application/json: { schema: { $ref: '#/components/schemas/ScanReport' } } } }
         '404': { description: Report not found or expired }
         '429': { description: Request limit reached }
+    head:
+      operationId: probeRequestScopeExport
+      summary: Export-availability probe without a response body
+      parameters:
+        - { name: reportId, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{16}$' } }
+      responses:
+        '200': { description: The GET headers with an empty body, including Content-Disposition attachment }
+        '404': { description: Report not found or expired }
   /api/v1/url-risk:
     post:
       operationId: assessUrlRisk

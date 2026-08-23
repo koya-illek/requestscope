@@ -184,3 +184,34 @@ describe("rate-limited public access", () => {
     await expect(response.json()).resolves.toMatchObject({ protection: "rate-limit", sourceRevision: "uncommitted-source", databaseSchemaVersion: 1 });
   });
 });
+
+describe("HEAD probes on read endpoints", () => {
+  it("answers HEAD /api/health with GET headers and no body", async () => {
+    const response = await worker.fetch(new Request("https://api.example/api/health", { method: "HEAD" }), env, ctx);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("");
+    expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+    expect(response.headers.get("content-type")).toContain("application/json");
+  });
+
+  it("answers HEAD report and export requests with the same caching headers as GET", async () => {
+    const report = { id: "abcdefghijklmnop" };
+    const prepare = vi.fn((sql: string) => ({
+      bind: vi.fn(() => ({ first: vi.fn(async () => sql.trimStart().startsWith("SELECT") ? { report_json: JSON.stringify(report) } : undefined) })),
+    }));
+    const envWithDb = { ...env, DB: { prepare } as unknown as D1Database };
+    const head = await worker.fetch(new Request("https://api.example/api/scans/abcdefghijklmnop", { method: "HEAD" }), envWithDb, ctx);
+    expect(head.status).toBe(200);
+    expect(head.headers.get("cache-control")).toBe("private, max-age=60");
+    expect(await head.text()).toBe("");
+    const exportHead = await worker.fetch(new Request("https://api.example/api/scans/abcdefghijklmnop/export", { method: "HEAD" }), envWithDb, ctx);
+    expect(exportHead.status).toBe(200);
+    expect(exportHead.headers.get("content-disposition")).toContain("attachment");
+    expect(await exportHead.text()).toBe("");
+  });
+
+  it("keeps write routes closed to HEAD", async () => {
+    const response = await worker.fetch(new Request("https://api.example/api/scans", { method: "HEAD" }), env, ctx);
+    expect(response.status).toBe(404);
+  });
+});

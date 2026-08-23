@@ -20,7 +20,8 @@ RequestScope applies layered controls:
   handoffs use the same public-target gate; optional phases report skipped or
   partial coverage when the budget is reached
 - bounded JSON request reads, independent of `Content-Length`
-- GET requests only
+- GET-only fetches to inspected targets; configured reputation providers
+  receive only their documented API calls
 - no cookies forwarded between hops
 - no user-controlled request headers
 - daily client rate limits without raw IP retention
