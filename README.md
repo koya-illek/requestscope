@@ -114,9 +114,10 @@ https://requestscope.illek.ie/mcp
 https://requestscope.illek.ie/mcp/v2
 ```
 
-Both URLs expose one tool, `assess_url_risk`, backed by exactly the same scan
-and scoring engine as the REST endpoint. `/mcp/v2` is a versioned RequestScope
-alias; the negotiated MCP protocol version is `2025-11-25`.
+Both URLs expose `trace_request`, `assess_url_risk`, and
+`get_requestscope_report`, all backed by exactly the same scan and scoring
+engine as the REST endpoint. `/mcp/v2` is a versioned RequestScope alias; the
+negotiated MCP protocol version is `2025-11-25`.
 
 - Copilot Studio: import [`web/mcp-copilot.yaml`](web/mcp-copilot.yaml), or enter the
   `/mcp` URL through its MCP onboarding wizard.

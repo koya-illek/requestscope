@@ -1,9 +1,9 @@
 import type { ScanReport, UrlRiskAssessment } from "./types";
 import type { UrlRiskContext } from "./url-risk";
 import { BlockedTargetError, InputError, RateLimitError } from "./security";
+import { MCP_SERVER_VERSION } from "./version";
 
 const MCP_PROTOCOL_VERSION = "2025-11-25";
-const MCP_SERVER_VERSION = "2.2.0";
 const MAX_MCP_REQUEST_BYTES = 16 * 1024;
 
 interface McpRequest {

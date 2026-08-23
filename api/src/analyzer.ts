@@ -14,6 +14,7 @@ import {
 } from "./security";
 import { RequestBudget, BudgetExceededError } from "./budget";
 import { assertPublicTarget, assertResolutionHealthy, uniqueAddresses, type PublicResolution } from "./egress";
+import { API_VERSION } from "./version";
 import type { Dependency, DnsQueryResult, PageSecuritySignals, RedirectHop, ScanReport, PhaseCoverage } from "./types";
 
 const MAX_REDIRECTS = 6;
@@ -294,7 +295,7 @@ export async function analyzeUrl(
       },
     },
     provenance: {
-      apiVersion: "1.4.0",
+      apiVersion: API_VERSION,
       sourceRevision: observer.sourceRevision || "uncommitted-source",
       reportSchemaVersion: 1,
       databaseSchemaVersion: 1,

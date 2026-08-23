@@ -92,3 +92,27 @@ test("CSP forbids inline styles and no markup injects a style attribute", async 
   // be blocked by the strict style-src policy.
   assert.ok(!app.includes('style="'), "app.js must not render inline style attributes");
 });
+
+test("version identifiers live in one module and match package.json", async () => {
+  const [pkg, version, index, analyzer, mcp] = await Promise.all([
+    readFile(new URL("../api/package.json", import.meta.url), "utf8"),
+    readFile(new URL("../api/src/version.ts", import.meta.url), "utf8"),
+    readFile(new URL("../api/src/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../api/src/analyzer.ts", import.meta.url), "utf8"),
+    readFile(new URL("../api/src/mcp.ts", import.meta.url), "utf8"),
+  ]);
+  const apiVersion = version.match(/export const API_VERSION = "([^"]+)"/)?.[1];
+  const mcpVersion = version.match(/export const MCP_SERVER_VERSION = "([^"]+)"/)?.[1];
+  assert.ok(apiVersion && mcpVersion, "version.ts must export both identifiers");
+  assert.equal(JSON.parse(pkg).version, apiVersion);
+  for (const source of [index, analyzer]) {
+    assert.ok(!source.includes(`"${apiVersion}"`), "API version literal must only appear in version.ts");
+  }
+  assert.ok(!mcp.includes(`"${mcpVersion}"`), "MCP server version literal must only appear in version.ts");
+});
+
+test("README describes the published three-tool MCP server", async () => {
+  const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
+  assert.ok(readme.includes("`trace_request`, `assess_url_risk`, and"), "README must name all three tools");
+  assert.ok(!/expose one tool/.test(readme), "README must not claim a single-tool MCP server");
+});

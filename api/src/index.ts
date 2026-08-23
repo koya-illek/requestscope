@@ -8,8 +8,8 @@ import {
 } from "./security";
 import type { Env, ReputationProviderName, ScanReport } from "./types";
 import { handleMcp } from "./mcp";
+import { API_VERSION } from "./version";
 
-const API_VERSION = "1.4.0";
 const REPORT_ID = /^[A-Za-z0-9_-]{16}$/;
 const MAX_REQUEST_BYTES = 8192;
 const RECENT_SCAN_TTL = 300;
