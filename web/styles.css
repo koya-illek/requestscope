@@ -809,13 +809,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .principles, .developer-access, footer, .report-actions, .filter-set,
   .dialog-close { display: none !important; }
   /* Dark translucent surfaces would sit on white paper as unreadable slabs. */
-  .panel, .reputation-results, .hop-header-list, .principle-grid article { background: #fff; }
+  .panel, .reputation-results, .hop-header-list { background: #fff; }
   .observation-note, .deps-toggle, .trace-options, .risk-context { background: none; }
   .dns-empty, .reputation-consent, .risk-context > p, .risk-boundary,
   .dep-src, .takeover-detail span, .dep-flag-auth, .dep-svc, .dependency .party { color: var(--muted); }
-  .input-shell button, .primary-button { color: #fff; }
   .metric strong.good, .status-code:not(.redirect):not(.error), .section-number,
-  .dns-title strong, .observation-note strong, .dep-d-name, .brand > span:last-child span { color: var(--accent); }
+  .dns-title strong, .observation-note strong, .dep-d-name { color: var(--accent); }
   .report-header h2, .hop-main strong, .report-header > div > a { letter-spacing: normal; }
   .hop-main strong, .report-header > div > a { white-space: normal; overflow-wrap: anywhere; }
   .hop, .finding, .risk-finding, .provider-result, .dep-domain, .sdk-item,
