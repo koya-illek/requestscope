@@ -25,6 +25,8 @@
   const errorPanel = $("#error-panel");
   const reportPanel = $("#report");
   const methodDialog = $("#method-dialog");
+  const radarDialog = $("#radar-dialog");
+  const linkDialog = $("#link-dialog");
 
   configureProviderAvailability();
 
@@ -54,6 +56,17 @@
   $("#copy-link").addEventListener("click", copyShareLink);
   $("#export-json").addEventListener("click", exportJson);
   $("#cloudflare-scan").addEventListener("click", openCloudflareScan);
+  $("#radar-cancel").addEventListener("click", () => radarDialog.close());
+  $("#radar-close").addEventListener("click", () => radarDialog.close());
+  $("#radar-confirm").addEventListener("click", confirmRadarHandoff);
+  radarDialog.addEventListener("click", (event) => {
+    if (event.target === radarDialog) radarDialog.close();
+  });
+  $("#link-select").addEventListener("click", selectShareLink);
+  $("#link-close").addEventListener("click", () => linkDialog.close());
+  linkDialog.addEventListener("click", (event) => {
+    if (event.target === linkDialog) linkDialog.close();
+  });
   $("#method-button").addEventListener("click", () => methodDialog.showModal());
   $("#footer-method-button").addEventListener("click", () => methodDialog.showModal());
   $("#dialog-close").addEventListener("click", () => methodDialog.close());
@@ -485,8 +498,18 @@
       await navigator.clipboard.writeText(link);
       flashButton($("#copy-link"), "Copied");
     } catch {
-      prompt("Copy this report link:", link);
+      // Clipboard permission or focus rules blocked the write; the link
+      // becomes a designed, selectable surface instead of a blocking prompt.
+      $("#link-field").value = link;
+      linkDialog.showModal();
+      selectShareLink();
     }
+  }
+
+  function selectShareLink() {
+    const field = $("#link-field");
+    field.focus();
+    field.select();
   }
 
   function exportJson() {
@@ -500,10 +523,15 @@
 
   function openCloudflareScan() {
     if (!state.report) return;
-    const target = state.rawUrl || state.report.finalUrl || state.report.normalizedUrl;
-    const approved = confirm("Cloudflare retains URL Scanner reports and may make them public. Do not continue with authenticated, private, password-reset, or token-bearing URLs; query values are sent exactly as typed. Open Cloudflare's public scanner with this URL?");
-    if (!approved) return;
-    window.open(`https://radar.cloudflare.com/scan?url=${encodeURIComponent(target)}`, "_blank", "noopener,noreferrer");
+    state.radarUrl = state.rawUrl || state.report.finalUrl || state.report.normalizedUrl;
+    radarDialog.showModal();
+  }
+
+  function confirmRadarHandoff() {
+    const target = state.radarUrl;
+    state.radarUrl = null;
+    radarDialog.close();
+    if (target) window.open(`https://radar.cloudflare.com/scan?url=${encodeURIComponent(target)}`, "_blank", "noopener,noreferrer");
   }
 
   function reset(pushHistory = true) {

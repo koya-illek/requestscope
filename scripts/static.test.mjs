@@ -107,6 +107,16 @@ test("CSP forbids inline styles and no markup injects a style attribute", async 
   assert.ok(!app.includes('style="'), "app.js must not render inline style attributes");
 });
 
+test("consent-critical flows are designed dialogs, not blocking prompts", async () => {
+  const [html, app] = await Promise.all([read("index.html"), read("app.js")]);
+  assert.ok(html.includes('id="radar-dialog" aria-labelledby="radar-dialog-title"'), "Cloudflare Radar consent must be a labelled dialog");
+  assert.ok(html.includes('id="link-dialog" aria-labelledby="link-dialog-title"'), "share-link fallback must be a labelled dialog");
+  assert.ok(html.includes("may make them public"), "Radar dialog must retain the public-retention warning");
+  assert.ok(app.includes("#radar-confirm") && app.includes("#radar-cancel"));
+  assert.ok(!/\bconfirm\s*\(/.test(app), "app.js must not open blocking confirm() prompts");
+  assert.ok(!/\bprompt\s*\(/.test(app), "app.js must not fall back to prompt()");
+});
+
 test("the report UI renders each hop's captured response headers", async () => {
   const [app, styles] = await Promise.all([read("app.js"), read("styles.css")]);
   // Findings cite evidence paths like http.hops.1.responseHeaders.cache-control;

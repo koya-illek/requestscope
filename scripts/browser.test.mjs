@@ -279,6 +279,59 @@ await loadGuardPage.waitForSelector("#risk-verdict.high", { state: "visible" });
 assert.equal(await loadGuardPage.locator("#trace-button[disabled]").count(), 0);
 await loadGuardContext.close();
 
+// The Cloudflare Radar handoff is consent-critical, so it is a designed
+// dialog: cancel opens nothing, confirm hands the exact URL to Radar in a
+// new browsing context.
+const radarContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+const radarPage = await radarContext.newPage();
+await radarPage.route("**/api/health", async (route) => {
+  await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, reputationProviders: {} }) });
+});
+await radarPage.route("**/api/scans/stream", async (route) => {
+  const events = ["accepted", "validated", "dns", "hop", "response", "complete"]
+    .map((stage) => JSON.stringify({ type: "progress", stage, message: `Stage ${stage}` }));
+  await route.fulfill({
+    status: 200,
+    contentType: "application/x-ndjson",
+    body: `${events.join("\n")}\n${JSON.stringify({ type: "result", report })}\n`,
+  });
+});
+await radarPage.addInitScript(() => {
+  window.__radarPopups = [];
+  window.open = (url) => { window.__radarPopups.push(String(url)); return null; };
+  Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+});
+await radarPage.goto(pathToFileURL(path.resolve(webRoot, "index.html")).href);
+await radarPage.fill("#url-input", "https://micros0ft.example/login");
+await radarPage.click("#trace-button");
+await radarPage.waitForSelector("#risk-verdict.high", { state: "visible" });
+await radarPage.click("#cloudflare-scan");
+await radarPage.waitForSelector("#radar-dialog[open]");
+assert.match(await radarPage.textContent("#radar-dialog"), /may make them public/);
+await radarPage.click("#radar-cancel");
+await radarPage.waitForSelector("#radar-dialog", { state: "hidden" });
+assert.deepEqual(await radarPage.evaluate(() => window.__radarPopups), []);
+await radarPage.click("#cloudflare-scan");
+await radarPage.waitForSelector("#radar-dialog[open]");
+await radarPage.click("#radar-confirm");
+await radarPage.waitForSelector("#radar-dialog", { state: "hidden" });
+assert.deepEqual(
+  await radarPage.evaluate(() => window.__radarPopups),
+  ["https://radar.cloudflare.com/scan?url=https%3A%2F%2Fmicros0ft.example%2Flogin"],
+);
+
+// Without clipboard access the share flow surfaces the link as a selectable
+// dialog field instead of a blocking prompt.
+await radarPage.click("#copy-link");
+await radarPage.waitForSelector("#link-dialog[open]");
+assert.equal(
+  await radarPage.inputValue("#link-field"),
+  `${radarPage.url().split("#")[0]}#abcdefghijklmnop`,
+  "fallback field must hold the canonical share link",
+);
+assert.equal(await radarPage.evaluate(() => document.activeElement?.id), "link-field");
+await radarContext.close();
+
 // Phase 5: the cancel path. A trace that stops delivering events must stay
 // cancellable: the Cancel button aborts the fetch, surfaces the distinct
 // user-cancel copy, restores the controls, and leaves the form usable.
