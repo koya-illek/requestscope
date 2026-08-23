@@ -392,15 +392,10 @@ export async function probeTakeover(
     try {
       const check = await probeSubdomain(subdomain, budget, validatedHosts);
       if (check.cname !== null) results.push(check);
-    } catch (error) {
-      results.push({
-        subdomain,
-        cname: null,
-        resolvable: false,
-        httpStatus: null,
-        vulnerable: false,
-        evidence: `Probe rejected: ${error instanceof Error ? error.message : "unknown error"}`,
-      });
+    } catch {
+      // Rejected probes (blocked derived target, exhausted budget) carry no
+      // CNAME evidence; they stay out of the results like the other
+      // cname-less outcomes. Phase coverage counters record the shortfall.
     }
   }
   return results;
