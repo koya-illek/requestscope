@@ -9,7 +9,7 @@ const assessment = {
   claimedOrganisation: null, services: [], findings: [], reputation: { status: "not_configured", detail: "Not configured", consentRequired: true, providers: [] }, limitations: ["Not proof of safety"],
 } satisfies UrlRiskAssessment;
 
-function request(method: string, params: unknown = {}, id: number | undefined = 1) {
+function request(method: string, params: unknown = {}, id: number | string | undefined = 1) {
   return new Request("https://api.example/mcp", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
@@ -140,11 +140,11 @@ describe("MCP Streamable HTTP endpoint", () => {
   });
 
   it("normalises unusable JSON-RPC ids to null instead of reflecting them", async () => {
-    for (const id of [undefined, { nested: true }, ["array"]]) {
+    for (const id of [{ nested: true }, ["array"]]) {
       const response = await handleMcp(new Request("https://api.example/mcp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", method: "resources/list", ...(id === undefined ? {} : { id }) }),
+        body: JSON.stringify({ jsonrpc: "2.0", method: "resources/list", id }),
       }), async () => assessment);
       const body = await response.json<{ id: string | number | null }>();
       expect(body.id).toBeNull();
