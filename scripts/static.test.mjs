@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { access, readFile } from "node:fs/promises";
+import { gzipSync } from "node:zlib";
+import { access, readFile, stat } from "node:fs/promises";
 import { test } from "node:test";
 
 const read = (name) => readFile(new URL(`../web/${name}`, import.meta.url), "utf8");
@@ -174,6 +175,28 @@ test("the report UI renders each hop's captured response headers", async () => {
   assert.ok(app.includes("hop-header-list"), "app.js must render the header list");
   assert.ok(styles.includes(".hop-evidence"), "styles.css must style the hop evidence");
   assert.ok(styles.includes(".hop-header"), "styles.css must style individual header rows");
+});
+
+test("shipped asset weights stay inside the performance budget", async () => {
+  // The product ships no build step by design, so the budget is the guard:
+  // raw bytes bound what a maintainer may add, and the gzip numbers bound
+  // what a visitor transfers (Cloudflare compresses text assets).
+  const budgets = [
+    { file: "app.js", maxBytes: 46 * 1024, maxGzipBytes: 14 * 1024 },
+    { file: "styles.css", maxBytes: 42 * 1024, maxGzipBytes: 11 * 1024 },
+    { file: "fonts/inter-latin-wght-normal.woff2", maxBytes: 52 * 1024 },
+  ];
+  let totalRaw = 0;
+  for (const { file, maxBytes, maxGzipBytes } of budgets) {
+    const size = (await stat(new URL(`../web/${file}`, import.meta.url))).size;
+    totalRaw += size;
+    assert.ok(size <= maxBytes, `${file} is ${size} bytes; budget is ${maxBytes}`);
+    if (maxGzipBytes) {
+      const gzipped = gzipSync(await readFile(new URL(`../web/${file}`, import.meta.url))).length;
+      assert.ok(gzipped <= maxGzipBytes, `${file} gzips to ${gzipped} bytes; transfer budget is ${maxGzipBytes}`);
+    }
+  }
+  assert.ok(totalRaw <= 140 * 1024, `combined payload is ${totalRaw} bytes; total budget is ${140 * 1024}`);
 });
 
 test("version identifiers live in one module and match package.json", async () => {
