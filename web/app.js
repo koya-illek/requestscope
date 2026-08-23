@@ -497,7 +497,9 @@
     input.value = "";
     claimedOrganisation.value = "";
     messageContext.value = "";
+    mapDepsCheckbox.checked = false;
     externalReputationCheckbox.checked = false;
+    updateAdvancedOptionState();
     updateQueryWarning();
     input.focus();
     scrollToEl(document.body, "start");

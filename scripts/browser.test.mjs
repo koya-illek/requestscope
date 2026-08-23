@@ -163,6 +163,19 @@ const appliedDelay = await cspPage.evaluate(() =>
   document.querySelector("#timeline .hop.replay")?.style.animationDelay || "");
 assert.equal(appliedDelay, "0ms");
 assert.deepEqual(violations, [], `strict CSP run produced console/page errors: ${violations.join(" | ")}`);
+
+// Regression: "Start a new trace" must clear every optional control and keep
+// its selection summary in sync with what the next submission would send.
+await cspPage.locator(".trace-options > summary").click();
+await cspPage.fill("#claimed-organisation", "Microsoft");
+await cspPage.check("#map-deps");
+await cspPage.click("#trace-button");
+await cspPage.waitForSelector("#report:not(.hidden)");
+await cspPage.click("#new-trace");
+assert.equal(await cspPage.inputValue("#claimed-organisation"), "");
+assert.equal(await cspPage.isChecked("#map-deps"), false);
+assert.equal(await cspPage.isChecked("#external-reputation"), false);
+assert.equal(await cspPage.textContent("#trace-options-state"), "Optional");
 await cspContext.close();
 server.close();
 
