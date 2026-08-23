@@ -58,6 +58,11 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): 
           urlRisk: "POST /api/v1/url-risk",
           mcp: "POST /mcp (also /mcp/v2)",
         },
+        documentation: {
+          openapi: "/openapi.yaml",
+          mcpConnector: "/mcp-copilot.yaml",
+          privacy: "/privacy",
+        },
       }, 200, cors);
     }
 
@@ -85,7 +90,11 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): 
         return streamScan(request, input, env, ctx, cors);
       }
       const report = await createScan(request, input, env, ctx);
-      return json(report, 201, { ...cors, "Cache-Control": "no-store" });
+      return json(report, 201, {
+        ...cors,
+        Location: `/api/scans/${report.id}`,
+        "Cache-Control": "no-store",
+      });
     }
 
     if (url.pathname === "/api/v1/url-risk" && request.method === "POST") {

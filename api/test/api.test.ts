@@ -28,9 +28,11 @@ describe("API routing and input boundary", () => {
   it("publishes endpoint discovery", async () => {
     const response = await worker.fetch(new Request("https://api.example/api"), env, ctx);
     expect(response.status).toBe(200);
-    const body = await response.json<{ endpoints: Record<string, string> }>();
+    const body = await response.json<{ endpoints: Record<string, string>; documentation: Record<string, string> }>();
     expect(body.endpoints.streamScan).toBe("POST /api/scans/stream");
     expect(body.endpoints.urlRisk).toBe("POST /api/v1/url-risk");
+    // Discovery must hand integrators the published contracts directly.
+    expect(body.documentation).toEqual({ openapi: "/openapi.yaml", mcpConnector: "/mcp-copilot.yaml", privacy: "/privacy" });
   });
 
   it("rejects a body larger than the stream boundary even without relying on Content-Length", async () => {
@@ -72,6 +74,8 @@ describe("API routing and input boundary", () => {
     }), { ...env, DB: db }, ctx);
 
     expect(response.status).toBe(201);
+    // A created report advertises its retrieval path per REST conventions.
+    expect(response.headers.get("location")).toBe("/api/scans/cached-report");
     expect(rateLimitChecks).toBe(1);
     expect(await response.json()).toEqual(cachedReport);
   });
