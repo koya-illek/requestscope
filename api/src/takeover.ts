@@ -11,8 +11,8 @@ const MAX_BODY_BYTES = 102_400; // 100 KB — enough for signature matching
 const VULNERABLE_PATTERNS: Array<{ pattern: RegExp; service: string; evidence: string }> = [
   // GitHub Pages
   { pattern: /\.github\.io$/i, service: "GitHub Pages", evidence: "CNAME points to GitHub Pages - verify the repo exists" },
-  // AWS S3
-  { pattern: /\.s3\.amazonaws\.com$/i, service: "AWS S3", evidence: "CNAME points to S3 - verify the bucket exists" },
+  // AWS S3: global, regional REST, dualstack, and legacy dash forms
+  { pattern: /\.s3(?:-[a-z0-9-]+|\.[a-z0-9-]+)*\.amazonaws\.com$/i, service: "AWS S3", evidence: "CNAME points to S3 - verify the bucket exists" },
   { pattern: /\.s3-website[\.-].*\.amazonaws\.com$/i, service: "AWS S3", evidence: "CNAME points to S3 website endpoint - verify bucket exists" },
   // Heroku
   { pattern: /\.herokuapp\.com$/i, service: "Heroku", evidence: "CNAME points to Heroku - verify the app exists" },
@@ -82,7 +82,6 @@ const TAKEOVER_SIGNATURES: Array<{ service: string; patterns: RegExp[] }> = [
     service: "Azure",
     patterns: [
       /404 Web Site not found/i,
-      /The web site you have accessed is not available/i,
     ],
   },
   {
@@ -99,22 +98,26 @@ const TAKEOVER_SIGNATURES: Array<{ service: string; patterns: RegExp[] }> = [
   },
   {
     service: "Ghost",
+    // Verified against a live unclaimed *.ghost.io host: the platform answers
+    // with its "Domain error" page.
     patterns: [
-      /The page you are looking for doesn't exist or has been moved/i,
+      /<h1[^>]*>\s*Domain error/i,
+      /<title[^>]*>\s*Domain error/i,
     ],
   },
   {
     service: "Cargo",
+    // Only the cargo-marked variant is used; the bare "page not found"
+    // phrasing is ordinary custom-404 copy and accused live sites.
     patterns: [
       /404 Not Found.*cargo/i,
-      /The page you were looking for doesn't exist/i,
     ],
   },
   {
     service: "Tumblr",
+    // Verified against a live removed-blog page.
     patterns: [
       /Whatever you were looking for doesn't currently exist at this address/i,
-      /There's nothing here/i,
     ],
   },
   {
@@ -125,15 +128,19 @@ const TAKEOVER_SIGNATURES: Array<{ service: string; patterns: RegExp[] }> = [
   },
   {
     service: "Squarespace",
+    // "No Such Website" verified as the platform title on an unclaimed name.
     patterns: [
+      /No Such Website/i,
       /No Such Site/i,
-      /domain not found/i,
     ],
   },
   {
     service: "Webflow",
+    // The full sentence is what an unclaimed *.webflow.io host serves; the
+    // shorter prefix is generic custom-404 copy that accused live sites. The
+    // platform page encodes the apostrophe as &#x27;, so both forms match.
     patterns: [
-      /The page you are looking for doesn't exist/i,
+      /The page you are looking for doesn(?:'|&#x?27;|&#39;)t exist or has been moved/i,
     ],
   },
   {
@@ -179,7 +186,7 @@ const TAKEOVER_SIGNATURES: Array<{ service: string; patterns: RegExp[] }> = [
  * Match a CNAME target against known vulnerable patterns.
  * Returns the first match or null.
  */
-function matchVulnerablePattern(
+export function matchVulnerablePattern(
   cname: string,
 ): { service: string; evidence: string } | null {
   for (const entry of VULNERABLE_PATTERNS) {
@@ -194,7 +201,7 @@ function matchVulnerablePattern(
  * Check an HTTP response body for known takeover signatures.
  * Only checks signatures for the matching service to avoid false positives.
  */
-function matchTakeoverSignature(service: string, body: string): boolean {
+export function matchTakeoverSignature(service: string, body: string): boolean {
   for (const entry of TAKEOVER_SIGNATURES) {
     if (entry.service !== service) continue;
     for (const pattern of entry.patterns) {
@@ -277,56 +284,26 @@ async function readBodyLimited(response: Response): Promise<string> {
  * Probe a single subdomain for takeover potential.
  *
  * 1. Query CNAME record
- * 2. If CNAME matches a known vulnerable service, do an HTTP GET
- * 3. If the HTTP response body contains a takeover signature, mark vulnerable
+ * 2. Return null unless the CNAME target matches a known vulnerable service
+ *    — non-qualifying outcomes (failed or absent CNAME lookups, unrelated
+ *    CNAME targets) stay out of the report entirely, exactly as the
+ *    probeTakeover contract promises.
+ * 3. Otherwise do an HTTP GET; if the response body contains the service's
+ *    takeover signature, evaluateTakeoverVerdict decides the claim.
  */
 async function probeSubdomain(
   subdomain: string,
   budget?: RequestBudget,
   validatedHosts?: Map<string, PublicResolution>,
-): Promise<SubdomainTakeoverCheck> {
-  // Step 1: Query CNAME
+): Promise<SubdomainTakeoverCheck | null> {
   const dnsResult = await queryDns(subdomain, "CNAME", "cloudflare", budget);
+  const cname = dnsResult.answers.find((a) => a.type === "CNAME")?.data;
+  if (!cname) return null;
 
-  if (dnsResult.error || dnsResult.answers.length === 0) {
-    return {
-      subdomain,
-      cname: null,
-      resolvable: false,
-      httpStatus: null,
-      vulnerable: false,
-      evidence: "No CNAME record found",
-    };
-  }
-
-  const cnameRecord = dnsResult.answers.find((a) => a.type === "CNAME");
-  if (!cnameRecord) {
-    return {
-      subdomain,
-      cname: null,
-      resolvable: true,
-      httpStatus: null,
-      vulnerable: false,
-      evidence: "DNS resolved but no CNAME record present",
-    };
-  }
-
-  const cname = cnameRecord.data;
-
-  // Step 2: Check against vulnerable patterns
   const match = matchVulnerablePattern(cname);
-  if (!match) {
-    return {
-      subdomain,
-      cname,
-      resolvable: true,
-      httpStatus: null,
-      vulnerable: false,
-      evidence: `CNAME points to ${cname} — no known takeover pattern`,
-    };
-  }
+  if (!match) return null;
 
-  // Step 3: HTTP probe to look for takeover signatures
+  // HTTP probe to look for takeover signatures
   try {
     const { response, url } = budget
       ? await fetchPublicUrl(`https://${subdomain}`, budget, { signal: AbortSignal.timeout(PROBE_TIMEOUT), resource: "takeover" }, 2, validatedHosts)
@@ -342,7 +319,6 @@ async function probeSubdomain(
       // Body read failed — we still have the status code
     }
 
-    // Step 4: Combine status and signature evidence into a conservative verdict
     const outcome = evaluateTakeoverVerdict(
       match.service,
       httpStatus,
@@ -391,7 +367,7 @@ export async function probeTakeover(
     if (budget && !budget.canStart()) break;
     try {
       const check = await probeSubdomain(subdomain, budget, validatedHosts);
-      if (check.cname !== null) results.push(check);
+      if (check) results.push(check);
     } catch {
       // Rejected probes (blocked derived target, exhausted budget) carry no
       // CNAME evidence; they stay out of the results like the other
