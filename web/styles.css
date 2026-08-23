@@ -173,7 +173,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .input-shell button:hover { background: var(--accent-2); }
 .input-shell button:disabled { opacity: .55; cursor: wait; }
 .input-shell svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; }
-.form-meta { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 13px; color: #6f887d; font: 400 11px/1.5 var(--mono); }
+.form-meta { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 13px; color: #6f887d; font: 400 12px/1.5 var(--mono); }
 .form-meta span::before { content: "·"; color: var(--accent); margin-right: 8px; }
 .query-warning {
   max-width: 900px;
@@ -182,7 +182,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
   border: 1px solid rgba(255, 198, 92, .25);
   background: rgba(255, 198, 92, .05);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.55;
 }
 .query-warning strong {
@@ -332,7 +332,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .finding.critical .finding-dot { background: var(--critical); }
 .finding.positive .finding-dot { background: var(--accent); }
 .finding h4 { margin: 0 0 6px; font-size: 13px; }
-.finding p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.finding p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .finding code { display: block; margin-top: 8px; color: var(--muted); font: 400 9px/1 var(--mono); }
 .dependencies-panel { margin-top: 20px; }
 .filter-set { gap: 5px !important; }
@@ -373,7 +373,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .trace-options > summary strong,
 .trace-options > summary small { display: block; }
 .trace-options > summary strong { color: var(--text); font-size: 13px; }
-.trace-options > summary small { margin-top: 3px; color: var(--muted); font: 400 10px/1.5 var(--mono); }
+.trace-options > summary small { margin-top: 3px; color: var(--muted); font: 400 12px/1.5 var(--mono); }
 .trace-options-state { color: var(--accent); font: 600 9px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
 .trace-options-body { padding: 0 15px 16px; border-top: 1px solid var(--line); }
 .deps-toggle {
@@ -383,7 +383,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 }
 .deps-toggle input { flex: 0 0 auto; margin: 1px 0 0; width: 22px; height: 22px; accent-color: var(--accent); cursor: pointer; }
 .deps-toggle-text strong { display: block; font-size: 13px; color: var(--text); }
-.deps-toggle-text small { display: block; margin-top: 2px; color: var(--muted); font: 400 10px/1.5 var(--mono); }
+.deps-toggle-text small { display: block; margin-top: 2px; color: var(--muted); font: 400 12px/1.5 var(--mono); }
 
 .risk-context { max-width: 900px; margin-top: 12px; border: 1px solid var(--line); background: rgba(10, 22, 19, .5); }
 .risk-context summary { min-height: 44px; padding: 13px 15px; color: var(--text); font: 500 11px/1.4 var(--mono); cursor: pointer; }
@@ -392,10 +392,10 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .risk-context label { color: var(--muted); font: 500 10px/1.5 var(--mono); }
 .risk-context input, .risk-context textarea { width: 100%; margin-top: 6px; padding: 10px 11px; border: 1px solid var(--line-bright); outline: 0; background: #08110f; color: var(--text); font: 400 12px/1.5 var(--mono); resize: vertical; }
 .risk-context input:focus, .risk-context textarea:focus { border-color: var(--accent); }
-.risk-context > p { margin: 0; padding: 0 15px 14px; font-size: 10px; line-height: 1.5; }
+.risk-context > p { margin: 0; padding: 0 15px 14px; font-size: 12px; line-height: 1.5; }
 .reputation-toggle { margin-top: 10px; }
 .reputation-toggle:has(input:disabled) { cursor: not-allowed; opacity: .56; }
-.reputation-consent { max-width: 900px; margin: 10px 0 0; padding: 0 12px; color: #89a99b; font: 400 11px/1.6 var(--sans); }
+.reputation-consent { max-width: 900px; margin: 10px 0 0; padding: 0 12px; color: #89a99b; font: 400 13px/1.6 var(--sans); }
 .reputation-consent a { color: var(--muted); text-underline-offset: 3px; }
 
 .risk-panel { margin: -40px 0 54px; }
@@ -409,7 +409,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .reputation-results { padding: 18px 20px; border-bottom: 1px solid var(--line); background: rgba(8, 17, 15, .42); }
 .reputation-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .reputation-head > strong { font-size: 12px; }
-.reputation-results > p { margin: 8px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.reputation-results > p { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .reputation-status { color: var(--muted); font: 700 9px/1 var(--mono); }
 .reputation-status.matched { color: var(--critical); }
 .reputation-status.not_listed { color: var(--accent); }
@@ -419,16 +419,16 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .provider-result > div { display: flex; justify-content: space-between; gap: 12px; }
 .provider-result strong { font-size: 11px; }
 .provider-result span { color: var(--muted); font: 400 9px/1.4 var(--mono); }
-.provider-result p { margin: 7px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.provider-result p { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .provider-result a { display: inline-block; margin-top: 8px; color: var(--accent); font: 600 9px/1.4 var(--mono); text-underline-offset: 3px; }
 .risk-finding { display: grid; grid-template-columns: 74px 1fr; gap: 14px; padding: 17px 20px; border-bottom: 1px solid var(--line); }
 .risk-finding > span { padding-top: 3px; color: var(--muted); font: 700 9px/1 var(--mono); }
 .risk-finding.medium > span { color: var(--warning); }
 .risk-finding.high > span { color: var(--critical); }
 .risk-finding h4 { margin: 0 0 5px; font-size: 13px; }
-.risk-finding p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.risk-finding p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .risk-finding code { display: block; margin-top: 7px; color: var(--muted); font: 400 9px/1 var(--mono); }
-.risk-boundary { margin: 0; padding: 15px 20px; font: 400 9px/1.5 var(--mono); }
+.risk-boundary { margin: 0; padding: 15px 20px; font: 400 12px/1.55 var(--mono); }
 
 .dep-map-panel { margin-top: 20px; }
 .dep-map-summary {
@@ -600,7 +600,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .developer-access > * { position: relative; z-index: 1; }
 .developer-access h2 { margin: 14px 0 14px; font-size: clamp(26px, 3vw, 40px); letter-spacing: -.04em; }
 .developer-access p { margin: 0; color: var(--muted); line-height: 1.7; }
-.developer-access .developer-note { margin-top: 18px; font: 500 11px/1.6 var(--mono); color: var(--accent); }
+.developer-access .developer-note { margin-top: 18px; font: 500 12px/1.6 var(--mono); color: var(--accent); }
 .developer-capabilities { display: flex; flex-wrap: wrap; gap: 7px; margin: 22px 0 0; padding: 0; list-style: none; }
 .developer-capabilities li { padding: 7px 9px; border: 1px solid var(--line); background: rgba(7, 16, 14, .5); color: var(--text); font: 500 10px/1 var(--mono); }
 .developer-capabilities li::before { content: "·"; margin-right: 7px; color: var(--accent); }
