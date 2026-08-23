@@ -22,7 +22,10 @@ const report = {
   observation: { vantage: "cloudflare-edge", colo: "DUB", country: "IE", disclaimer: "Edge observation." },
   dns: { queries: [], addresses: ["93.184.216.34"], dnssecAuthenticated: false },
   http: {
-    hops: [{ index: 0, url: "https://micros0ft.example/login", hostname: "micros0ft.example", status: 200, statusText: "OK", elapsedMs: 143, location: null, responseHeaders: {}, cf: { colo: "DUB", tlsVersion: "TLSv1.3" }, evidenceKind: "edge_http_observation" }],
+    hops: [
+      { index: 0, url: "https://micros0ft.example/login", hostname: "micros0ft.example", status: 302, statusText: "Found", elapsedMs: 41, location: "https://micros0ft.example/signin", responseHeaders: { location: "https://micros0ft.example/signin", server: "nginx", "cache-control": "private, max-age=0" }, cf: {}, evidenceKind: "edge_http_observation" },
+      { index: 1, url: "https://micros0ft.example/signin", hostname: "micros0ft.example", status: 200, statusText: "OK", elapsedMs: 102, location: null, responseHeaders: { "content-type": "text/html; charset=utf-8", "strict-transport-security": "max-age=31536000", "x-frame-options": "DENY" }, cf: { colo: "DUB", tlsVersion: "TLSv1.3" }, evidenceKind: "edge_http_observation" },
+    ],
     finalStatus: 200, contentType: "text/html", contentBytesInspected: 1200, truncated: false,
   },
   pageSecuritySignals: { passwordForm: true, forms: 1, externalFormAction: false, matchedLanguage: ["login"] },
@@ -87,7 +90,19 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 768, height: 102
   // style attributes), so the property is set while the markup stays clean.
   const stagger = await page.evaluate(() =>
     [...document.querySelectorAll("#timeline .hop.replay")].map((element) => element.style.animationDelay));
-  assert.deepEqual(stagger, ["0ms"]);
+  assert.deepEqual(stagger, ["0ms", "130ms"]);
+  // Every hop's captured response headers must be inspectable: findings cite
+  // evidence paths into http.hops[].responseHeaders, so the UI has to show
+  // that evidence rather than leaving it only in the JSON export.
+  assert.equal(await page.locator("#timeline .hop-evidence").count(), 2);
+  assert.equal(await page.textContent("#timeline .hop-evidence summary"), "Response headers 3 recorded");
+  await page.locator("#timeline .hop:first-child .hop-evidence summary").click();
+  const redirectHeaders = await page.locator("#timeline .hop:first-child .hop-header dt").allTextContents();
+  assert.deepEqual(redirectHeaders, ["location", "server", "cache-control"]);
+  assert.equal(
+    await page.locator("#timeline .hop:first-child .hop-header dd").first().textContent(),
+    "https://micros0ft.example/signin",
+  );
   await page.click("#footer-method-button");
   await page.waitForSelector("#method-dialog[open]");
   assert.equal(await page.textContent("#method-dialog h2"), "How RequestScope works");

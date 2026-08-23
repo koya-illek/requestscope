@@ -107,6 +107,17 @@ test("CSP forbids inline styles and no markup injects a style attribute", async 
   assert.ok(!app.includes('style="'), "app.js must not render inline style attributes");
 });
 
+test("the report UI renders each hop's captured response headers", async () => {
+  const [app, styles] = await Promise.all([read("app.js"), read("styles.css")]);
+  // Findings cite evidence paths like http.hops.1.responseHeaders.cache-control;
+  // the shareable report must expose that evidence, not leave it in the export.
+  assert.match(app, /function renderHopHeaders/);
+  assert.ok(app.includes("hop-evidence"), "app.js must mark up the per-hop header evidence");
+  assert.ok(app.includes("hop-header-list"), "app.js must render the header list");
+  assert.ok(styles.includes(".hop-evidence"), "styles.css must style the hop evidence");
+  assert.ok(styles.includes(".hop-header"), "styles.css must style individual header rows");
+});
+
 test("version identifiers live in one module and match package.json", async () => {
   const [pkg, version, index, analyzer, mcp] = await Promise.all([
     readFile(new URL("../api/package.json", import.meta.url), "utf8"),

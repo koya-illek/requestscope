@@ -314,6 +314,38 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .status-code.redirect { color: var(--warning); }
 .status-code.error { color: var(--critical); }
 .elapsed { color: var(--muted); font: 400 12px/1 var(--mono); }
+.hop-evidence { margin-top: 12px; }
+.hop-evidence > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 8px;
+  margin-left: -8px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--muted);
+  font: 500 10px/1 var(--mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  list-style: none;
+}
+.hop-evidence > summary::-webkit-details-marker { display: none; }
+.hop-evidence > summary::before { content: "▸"; font-size: 9px; transition: transform .2s; }
+.hop-evidence[open] > summary::before { transform: rotate(90deg); }
+.hop-evidence > summary:hover { color: var(--text); }
+.hop-header-list { margin: 8px 0 0; border: 1px solid var(--line); background: rgba(7, 16, 14, .5); }
+.hop-header {
+  display: grid;
+  grid-template-columns: minmax(120px, 220px) 1fr;
+  gap: 12px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  font: 400 10px/1.55 var(--mono);
+}
+.hop-header:last-child { border-bottom: 0; }
+.hop-header dt { color: #89a99b; overflow-wrap: anywhere; }
+.hop-header dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
 .report-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; align-items: start; }
 .panel { border: 1px solid var(--line); background: rgba(10, 22, 19, .72); }
 .panel-header { min-height: 66px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 1px solid var(--line); }
@@ -691,6 +723,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .section-heading .evidence-badge { display: none; }
   .hop { grid-template-columns: 42px minmax(0, 1fr); gap: 10px; }
   .hop-status { grid-column: 2; justify-content: space-between; }
+  .hop-header { grid-template-columns: 1fr; gap: 2px; }
   /* Full URLs are the product's evidence; on touch there are no tooltips,
      so let them wrap instead of hiding behind ellipsis. */
   .hop-main strong, .report-header > div > a { white-space: normal; overflow-wrap: anywhere; }

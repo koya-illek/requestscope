@@ -401,6 +401,7 @@
         <div class="hop-main">
           <strong title="${escapeAttr(hop.url)}">${escapeHtml(hop.url)}</strong>
           <div class="hop-detail">${details.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
+          ${renderHopHeaders(hop.responseHeaders)}
         </div>
         <div class="hop-status">
           <span class="status-code ${codeClass}">${Number.isFinite(hop.status) && hop.status !== 0 ? hop.status : "ERR"}</span>
@@ -412,6 +413,20 @@
       const index = Number(element.querySelector(".hop-index")?.textContent) - 1;
       element.style.animationDelay = `${Math.min(Math.max(0, index) * 130, 780)}ms`;
     });
+  }
+
+  /** The findings cite evidence paths like
+   * http.hops.1.responseHeaders.cache-control; this is where that evidence
+   * becomes visible. Values are already redacted server-side before storage. */
+  function renderHopHeaders(headers) {
+    const entries = Object.entries(headers || {});
+    if (!entries.length) return "";
+    return `<details class="hop-evidence">
+      <summary>Response headers <span>${entries.length} recorded</span></summary>
+      <dl class="hop-header-list">
+        ${entries.map(([name, value]) => `<div class="hop-header"><dt>${escapeHtml(name)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}
+      </dl>
+    </details>`;
   }
 
   function renderDns(queries) {
