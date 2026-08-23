@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
 import AxeBuilder from "@axe-core/playwright";
+import { createServer } from "node:http";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, fileURLToPath } from "node:url";
+import { readFile } from "node:fs/promises";
 
+const webRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "web");
 const browser = await chromium.launch({ executablePath: "/snap/bin/chromium", headless: true });
 const report = {
   schemaVersion: 1,
@@ -61,7 +64,7 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
     const body = `${events.join("\n")}\n${JSON.stringify({ type: "result", report })}\n`;
     await route.fulfill({ status: 200, contentType: "application/x-ndjson", body });
   });
-  await page.goto(pathToFileURL(path.resolve("web/index.html")).href);
+  await page.goto(pathToFileURL(path.resolve(webRoot, "index.html")).href);
   await page.fill("#url-input", "https://micros0ft.example/login");
   await page.locator(".trace-options > summary").click();
   await page.locator(".risk-context > summary").click();
@@ -80,6 +83,11 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
   assert.deepEqual(await page.locator("#live-route .route-node strong").allTextContents(), ["INPUT", "DNS", "EDGE", "PAGE", "MAP", "REP", "REPORT"]);
   assert.equal(await page.locator('#live-route .route-node[data-stage="reputation"]').getAttribute("class"), "route-node done");
   assert.equal(await page.textContent("#reputation-results a"), "Advisory provided by Google");
+  // The replay stagger must be applied through CSSOM (the CSP forbids inline
+  // style attributes), so the property is set while the markup stays clean.
+  const stagger = await page.evaluate(() =>
+    [...document.querySelectorAll("#timeline .hop.replay")].map((element) => element.style.animationDelay));
+  assert.deepEqual(stagger, ["0ms"]);
   await page.click("#footer-method-button");
   await page.waitForSelector("#method-dialog[open]");
   assert.equal(await page.textContent("#method-dialog h2"), "How RequestScope works");
@@ -101,5 +109,61 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
   await page.screenshot({ path: `/tmp/requestscope-risk-${viewport.width}.png`, fullPage: true });
   await context.close();
 }
+
+// Phase 3: serve the shell over HTTP with the production CSP header and fail
+// on any console or page error, so a policy change cannot break the app
+// unnoticed before deploy.
+const headersFile = await readFile(path.join(webRoot, "_headers"), "utf8");
+const csp = headersFile.match(/Content-Security-Policy: (.+)/)?.[1];
+assert.ok(csp, "_headers must declare a Content-Security-Policy");
+assert.ok(!csp.includes("unsafe-inline"));
+const contentTypes = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml", ".png": "image/png" };
+const server = createServer(async (request, response) => {
+  const urlPath = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
+  const filePath = path.join(webRoot, urlPath === "/" ? "index.html" : urlPath);
+  try {
+    const data = await readFile(filePath);
+    response.writeHead(200, {
+      "Content-Type": contentTypes[path.extname(filePath)] || "application/octet-stream",
+      "Content-Security-Policy": csp,
+    });
+    response.end(data);
+  } catch {
+    response.writeHead(404);
+    response.end();
+  }
+});
+await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+const cspContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+const cspPage = await cspContext.newPage();
+const violations = [];
+cspPage.on("console", (message) => {
+  if (message.type() === "error") violations.push(message.text());
+});
+cspPage.on("pageerror", (error) => violations.push(String(error)));
+await cspPage.route("**/api/**", async (route) => {
+  const { pathname } = new URL(route.request().url());
+  if (pathname === "/api/health") {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, reputationProviders: { googleWebRisk: true, phishTank: true, cloudflareFamilyDns: true } }) });
+    return;
+  }
+  const events = ["accepted", "validated", "dns", "hop", "response", "complete"]
+    .map((stage) => JSON.stringify({ type: "progress", stage, message: `Stage ${stage}` }));
+  await route.fulfill({
+    status: 200,
+    contentType: "application/x-ndjson",
+    body: `${events.join("\n")}\n${JSON.stringify({ type: "result", report })}\n`,
+  });
+});
+await cspPage.goto(`http://127.0.0.1:${server.address().port}/`);
+await cspPage.fill("#url-input", "https://micros0ft.example/login");
+await cspPage.click("#trace-button");
+await cspPage.waitForSelector("#risk-verdict.high", { state: "visible" });
+const appliedDelay = await cspPage.evaluate(() =>
+  document.querySelector("#timeline .hop.replay")?.style.animationDelay || "");
+assert.equal(appliedDelay, "0ms");
+assert.deepEqual(violations, [], `strict CSP run produced console/page errors: ${violations.join(" | ")}`);
+await cspContext.close();
+server.close();
 
 await browser.close();

@@ -66,3 +66,20 @@ test("public shell exposes metadata, keyboard navigation and privacy", async () 
   assert.doesNotMatch(privacy, /class="(?:eyebrow|section-kicker)"/);
   assert.doesNotMatch(privacy, /—/);
 });
+
+test("CSP forbids inline styles and no markup injects a style attribute", async () => {
+  const [html, privacy, headers, app] = await Promise.all([
+    read("index.html"),
+    read("privacy.html"),
+    read("_headers"),
+    read("app.js"),
+  ]);
+  const csp = headers.match(/Content-Security-Policy: (.+)/)?.[1] || "";
+  assert.match(csp, /style-src 'self'/);
+  assert.ok(!csp.includes("unsafe-inline"), "style-src must not allow inline styles");
+  assert.ok(!/<style[\s>]/i.test(html), "index.html must not carry a <style> element");
+  assert.ok(!/<style[\s>]/i.test(privacy), "privacy.html must not carry a <style> element");
+  // The timeline stagger is set via CSSOM; injected style=" attributes would
+  // be blocked by the strict style-src policy.
+  assert.ok(!app.includes('style="'), "app.js must not render inline style attributes");
+});

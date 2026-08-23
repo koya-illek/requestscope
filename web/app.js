@@ -386,6 +386,8 @@
   }
 
   function renderTimeline(hops) {
+    // The replay stagger is applied through CSSOM rather than a style
+    // attribute so the production CSP can forbid inline styles entirely.
     $("#timeline").innerHTML = hops.map((hop) => {
       const codeClass = hop.status === 0 || hop.status >= 400 ? "error" : hop.status >= 300 ? "redirect" : "";
       const details = [
@@ -394,7 +396,7 @@
         hop.cf?.colo ? `PoP ${hop.cf.colo}` : null,
         hop.error
       ].filter(Boolean);
-      return `<article class="hop replay" style="animation-delay:${Math.min(hop.index * 130, 780)}ms">
+      return `<article class="hop replay">
         <span class="hop-index">${String(hop.index + 1).padStart(2, "0")}</span>
         <div class="hop-main">
           <strong title="${escapeAttr(hop.url)}">${escapeHtml(hop.url)}</strong>
@@ -406,6 +408,10 @@
         </div>
       </article>`;
     }).join("");
+    $$("#timeline .hop.replay").forEach((element) => {
+      const index = Number(element.querySelector(".hop-index")?.textContent) - 1;
+      element.style.animationDelay = `${Math.min(Math.max(0, index) * 130, 780)}ms`;
+    });
   }
 
   function renderDns(queries) {
