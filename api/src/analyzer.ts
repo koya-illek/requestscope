@@ -15,7 +15,7 @@ import {
 import { RequestBudget, BudgetExceededError } from "./budget";
 import { assertPublicTarget, assertResolutionHealthy, uniqueAddresses, type PublicResolution } from "./egress";
 import { API_VERSION } from "./version";
-import type { Dependency, DnsQueryResult, PageSecuritySignals, RedirectHop, ScanReport, PhaseCoverage } from "./types";
+import type { CoverageStatus, Dependency, DnsQueryResult, PageSecuritySignals, RedirectHop, ScanReport, PhaseCoverage } from "./types";
 
 const MAX_REDIRECTS = 6;
 const MAX_BODY_BYTES = 256 * 1024;
@@ -288,10 +288,16 @@ export async function analyzeUrl(
       budget: finalBudget,
       phases: {
         core: phaseCoverage("core", scanBudgetStart, coreBudget, base.http.contentBytesInspected, base.http.truncated, status === "complete" ? undefined : "Core trace is partial."),
-        dependencies: dependencyMap?.coverage || phaseCoverage("dependencies", dependencyBudgetBefore, dependencyBudgetAfter, 0, false, options.mapDependencies ? "Dependency map unavailable" : "Dependency mapping was not requested."),
-        reputation: phaseCoverage("reputation", dependencyBudgetAfter, reputationBudget, 0, false, options.reputation?.enabled
-          ? reputation.status === "not_configured" ? "No reputation provider is configured." : undefined
-          : "External reputation was not requested."),
+        dependencies: dependencyMap?.coverage || phaseCoverage("dependencies", dependencyBudgetBefore, dependencyBudgetAfter, 0, false,
+          options.mapDependencies
+            ? "Dependency mapping was requested but the trace had no inspectable final response."
+            : "Dependency mapping was not requested.",
+          options.mapDependencies ? "unavailable" : undefined),
+        reputation: phaseCoverage("reputation", dependencyBudgetAfter, reputationBudget, 0, false,
+          options.reputation?.enabled
+            ? reputation.status === "not_configured" ? "No reputation provider is configured on this deployment." : undefined
+            : "External reputation was not requested.",
+          options.reputation?.enabled && reputation.status === "not_configured" ? "unavailable" : undefined),
       },
     },
     provenance: {
@@ -500,13 +506,16 @@ function phaseCoverage(
   bytesInspected: number,
   truncated: boolean,
   detail?: string,
+  statusOverride?: CoverageStatus,
 ): PhaseCoverage {
   const attempted = Math.max(0, after.subrequestsStarted - before.subrequestsStarted);
   const successful = Math.max(0, after.subrequestsSucceeded - before.subrequestsSucceeded);
   const failed = Math.max(0, after.subrequestsFailed - before.subrequestsFailed);
-  const skipped = detail && /not requested|unavailable|skipped/i.test(detail) ? 1 : 0;
+  // An override marks a phase the caller requested but that could not run at
+  // all; nothing was deliberately skipped in that case.
+  const optedOut = !statusOverride && Boolean(detail && /not requested|unavailable|skipped/i.test(detail));
   return {
-    status: detail && /not requested|unavailable|skipped/i.test(detail)
+    status: statusOverride ?? (detail && /not requested|unavailable|skipped/i.test(detail)
       ? "skipped"
       : detail && /partial/i.test(detail)
         ? "partial"
@@ -514,11 +523,11 @@ function phaseCoverage(
         ? "failed"
         : after.exhausted || truncated
           ? "partial"
-          : "complete",
+          : "complete"),
     attempted,
     successful,
     failed,
-    skipped,
+    skipped: optedOut ? 1 : 0,
     bytesInspected,
     truncated,
     durationMs: Math.max(0, after.elapsedMs - before.elapsedMs),

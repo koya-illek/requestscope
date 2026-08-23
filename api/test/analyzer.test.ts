@@ -140,6 +140,29 @@ describe("analyzeUrl", () => {
     expect(report.coverage?.phases.dependencies.status).toMatch(/complete|partial/);
     expect(requested.some((value) => value.includes("127.0.0.1"))).toBe(false);
   });
+
+  it("reports requested-but-impossible phases as unavailable, not skipped or complete", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (url.hostname === "cloudflare-dns.com" || url.hostname === "dns.google") return dnsResponse(url);
+      return new Response(null, { status: 302, headers: { Location: "http://127.0.0.1/admin" } });
+    }));
+
+    const blocked = await analyzeUrl("https://example.com", 14, {}, () => {}, { mapDependencies: true });
+    expect(blocked.coverage?.phases.dependencies.status).toBe("unavailable");
+    expect(blocked.coverage?.phases.dependencies.skipped).toBe(0);
+    expect(blocked.coverage?.phases.dependencies.detail).toContain("was requested but");
+
+    const unconfigured = await analyzeUrl("https://example.com", 14, {}, () => {}, {
+      reputation: { enabled: true },
+    });
+    expect(unconfigured.coverage?.phases.reputation.status).toBe("unavailable");
+    expect(unconfigured.coverage?.phases.reputation.detail).toContain("No reputation provider is configured");
+
+    const optedOut = await analyzeUrl("https://example.com", 14);
+    expect(optedOut.coverage?.phases.reputation.status).toBe("skipped");
+    expect(optedOut.coverage?.phases.reputation.skipped).toBe(1);
+  });
 });
 
 describe("DNS apex handling", () => {
