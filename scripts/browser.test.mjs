@@ -167,6 +167,7 @@ assert.deepEqual(violations, [], `strict CSP run produced console/page errors: $
 // Regression: "Start a new trace" must clear every optional control and keep
 // its selection summary in sync with what the next submission would send.
 await cspPage.locator(".trace-options > summary").click();
+await cspPage.locator(".risk-context > summary").click();
 await cspPage.fill("#claimed-organisation", "Microsoft");
 await cspPage.check("#map-deps");
 await cspPage.click("#trace-button");
