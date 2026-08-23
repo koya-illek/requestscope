@@ -324,7 +324,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .dns-title span { color: var(--muted); font: 400 10px/1 var(--mono); }
 .dns-answer { display: grid; grid-template-columns: 52px 1fr auto; gap: 12px; padding: 7px 0; color: var(--muted); font: 400 11px/1.4 var(--mono); }
 .dns-answer code { color: var(--text); overflow-wrap: anywhere; }
-.dns-empty { color: #60766d; font: 400 11px/1.4 var(--mono); }
+.dns-empty { font: 400 11px/1.4 var(--mono); }
 .finding { display: grid; grid-template-columns: 9px 1fr; gap: 14px; padding: 18px 20px; border-bottom: 1px solid var(--line); }
 .finding:last-child { border-bottom: 0; }
 .finding-dot { width: 7px; height: 7px; margin-top: 6px; border-radius: 50%; background: var(--info); }
@@ -349,7 +349,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .dependency .type { color: var(--accent); text-transform: uppercase; }
 .dependency a { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
 .dependency a:hover { color: var(--text); }
-.dependency .party { color: #61786e; text-align: right; }
+.dependency .party { text-align: right; }
 .observation-note { display: grid; grid-template-columns: 190px 1fr; gap: 20px; margin-top: 20px; padding: 20px; border-left: 2px solid var(--accent); background: rgba(89, 240, 167, .05); }
 .observation-note strong { font: 500 11px/1.5 var(--mono); color: var(--accent); text-transform: uppercase; }
 .observation-note p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
@@ -392,7 +392,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .risk-context label { color: var(--muted); font: 500 10px/1.5 var(--mono); }
 .risk-context input, .risk-context textarea { width: 100%; margin-top: 6px; padding: 10px 11px; border: 1px solid var(--line-bright); outline: 0; background: #08110f; color: var(--text); font: 400 12px/1.5 var(--mono); resize: vertical; }
 .risk-context input:focus, .risk-context textarea:focus { border-color: var(--accent); }
-.risk-context > p { margin: 0; padding: 0 15px 14px; color: #60766d; font-size: 10px; line-height: 1.5; }
+.risk-context > p { margin: 0; padding: 0 15px 14px; font-size: 10px; line-height: 1.5; }
 .reputation-toggle { margin-top: 10px; }
 .reputation-toggle:has(input:disabled) { cursor: not-allowed; opacity: .56; }
 .reputation-consent { max-width: 900px; margin: 10px 0 0; padding: 0 12px; color: #89a99b; font: 400 11px/1.6 var(--sans); }
@@ -428,7 +428,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .risk-finding h4 { margin: 0 0 5px; font-size: 13px; }
 .risk-finding p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
 .risk-finding code { display: block; margin-top: 7px; color: var(--muted); font: 400 9px/1 var(--mono); }
-.risk-boundary { margin: 0; padding: 15px 20px; color: #60766d; font: 400 9px/1.5 var(--mono); }
+.risk-boundary { margin: 0; padding: 15px 20px; font: 400 9px/1.5 var(--mono); }
 
 .dep-map-panel { margin-top: 20px; }
 .dep-map-summary {
@@ -536,7 +536,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .takeover-detail { display: flex; flex-direction: column; gap: 3px; }
 .takeover-detail strong { font: 500 12px/1.3 var(--mono); color: var(--text); }
 .takeover-detail code { font: 400 10px/1.3 var(--mono); color: var(--muted); }
-.takeover-detail span { font: 400 10px/1.4 var(--mono); color: #61786e; }
+.takeover-detail span { font: 400 10px/1.4 var(--mono); }
 
 .dep-map-source-grid {
   display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0;
@@ -574,7 +574,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .dep-cat-unknown, .dep-cat-functional { color: var(--muted); }
 .dep-host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .dep-svc { color: var(--muted); font-size: 9px; font-style: italic; white-space: nowrap; }
-.dep-src { color: #60776c; text-align: right; }
+.dep-src { text-align: right; }
 .dep-flag {
   padding: 2px 6px; font-size: 8px; font-weight: 700; letter-spacing: .05em;
 }

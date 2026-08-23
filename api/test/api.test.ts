@@ -3,7 +3,6 @@ import worker from "../src/index";
 import type { Env } from "../src/types";
 
 const env = {
-  ENVIRONMENT: "test",
   ALLOWED_ORIGINS: "https://requestscope.illek.ie",
   REPORT_RETENTION_DAYS: "14",
   DAILY_SCAN_LIMIT: "15",

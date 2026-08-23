@@ -330,7 +330,6 @@ export interface Env {
   DAILY_SCAN_LIMIT: string;
   MCP_DAILY_LIMIT: string;
   REPORT_DAILY_LIMIT: string;
-  ENVIRONMENT: string;
   SOURCE_REVISION?: string;
   RATE_LIMIT_BYPASS_IPS?: string;
   COPILOT_API_KEY?: string;
