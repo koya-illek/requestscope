@@ -53,7 +53,7 @@ const report = {
   },
 };
 
-for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+for (const viewport of [{ width: 1440, height: 1000 }, { width: 768, height: 1024 }, { width: 390, height: 844 }]) {
   const context = await browser.newContext({ viewport });
   const page = await context.newPage();
   let submittedExternalReputation = false;

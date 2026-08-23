@@ -1,6 +1,6 @@
 # RequestScope architecture
 
-Last reviewed: 2026-08-15
+Last reviewed: 2026-08-22
 
 RequestScope is a public URL tracing and risk-assessment service. It observes a URL from a Cloudflare edge location, records bounded DNS and HTTP evidence, derives explainable findings, and returns a privacy-redacted report to a browser, REST client, or MCP agent.
 
