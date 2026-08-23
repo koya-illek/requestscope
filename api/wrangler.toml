@@ -5,7 +5,6 @@ workers_dev = false
 preview_urls = false
 
 [vars]
-SOURCE_REVISION = "working-tree-2026-08-21"
 ALLOWED_ORIGINS = "https://requestscope.illek.ie,http://localhost:8788,http://127.0.0.1:8788"
 REPORT_RETENTION_DAYS = "14"
 DAILY_SCAN_LIMIT = "15"

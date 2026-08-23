@@ -11,7 +11,7 @@
     "test": "npm run audit:html && node --test scripts/static.test.mjs && npm --workspace api test",
     "test:browser": "node scripts/browser.test.mjs",
     "typecheck": "npm --workspace api run typecheck",
-    "deploy:api": "npm --workspace api run deploy"
+    "deploy:api": "npm --workspace api run deploy --"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",

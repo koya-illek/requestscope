@@ -88,8 +88,13 @@ cd api
 npx wrangler d1 execute requestscope --remote --file schema.sql
 npx wrangler secret put GOOGLE_WEB_RISK_API_KEY
 npx wrangler secret put PHISHTANK_APP_KEY
-npx wrangler deploy
+cd ..
+npm run deploy:api
 ```
+
+The deploy command refuses a dirty working tree and binds the current 12-character
+git revision as `SOURCE_REVISION`. Use `npm run deploy:api -- --dry-run` to inspect
+the Worker bundle and bindings without publishing it.
 
 PhishTank currently permits API calls without an application key, but assigns a
 lower provider-side request limit. Set `PHISHTANK_KEYLESS_ENABLED = "true"` and

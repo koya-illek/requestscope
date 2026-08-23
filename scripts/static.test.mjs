@@ -141,3 +141,18 @@ test("README describes the published three-tool MCP server", async () => {
   assert.ok(readme.includes("`trace_request`, `assess_url_risk`, and"), "README must name all three tools");
   assert.ok(!/expose one tool/.test(readme), "README must not claim a single-tool MCP server");
 });
+
+test("release command derives provenance from a clean git revision", async () => {
+  const [rootPackage, apiPackage, wrangler, deploy] = await Promise.all([
+    readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../api/package.json", import.meta.url), "utf8"),
+    readFile(new URL("../api/wrangler.toml", import.meta.url), "utf8"),
+    readFile(new URL("../api/scripts/deploy.mjs", import.meta.url), "utf8"),
+  ]);
+  assert.equal(JSON.parse(rootPackage).scripts["deploy:api"], "npm --workspace api run deploy --");
+  assert.equal(JSON.parse(apiPackage).scripts.deploy, "node scripts/deploy.mjs");
+  assert.ok(!/^SOURCE_REVISION\s*=/m.test(wrangler), "wrangler.toml must not carry a stale source revision");
+  assert.ok(deploy.includes('git(["status", "--porcelain=v1", "--untracked-files=all"])'));
+  assert.ok(deploy.includes('git(["rev-parse", "--short=12", "HEAD"])'));
+  assert.ok(deploy.includes("SOURCE_REVISION:${revision}"));
+});
