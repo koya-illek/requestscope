@@ -175,6 +175,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .input-shell svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; }
 .form-meta { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 13px; color: #6f887d; font: 400 12px/1.5 var(--mono); }
 .form-meta span::before { content: "·"; color: var(--accent); margin-right: 8px; }
+.form-meta kbd { padding: 1px 5px; border: 1px solid var(--line-bright); border-radius: 3px; color: #89a99b; font: inherit; }
 .query-warning {
   max-width: 900px;
   margin-top: 14px;

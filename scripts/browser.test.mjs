@@ -332,6 +332,23 @@ assert.equal(
 assert.equal(await radarPage.evaluate(() => document.activeElement?.id), "link-field");
 await radarContext.close();
 
+// "/" focuses the primary field from anywhere that is not text entry.
+const shortcutContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+const shortcutPage = await shortcutContext.newPage();
+await shortcutPage.goto(pathToFileURL(path.resolve(webRoot, "index.html")).href);
+await shortcutPage.keyboard.press("/");
+assert.equal(await shortcutPage.evaluate(() => document.activeElement?.id), "url-input");
+// Inside the field the shortcut must yield to ordinary typing.
+await shortcutPage.keyboard.type("example.com/");
+assert.equal(await shortcutPage.inputValue("#url-input"), "example.com/");
+await shortcutPage.fill("#url-input", "");
+await shortcutPage.locator(".trace-options > summary").click();
+await shortcutPage.check("#map-deps");
+await shortcutPage.locator("#map-deps").focus();
+await shortcutPage.keyboard.press("/");
+assert.equal(await shortcutPage.evaluate(() => document.activeElement?.id), "map-deps", "text entry and focused controls must win over the shortcut");
+await shortcutContext.close();
+
 // Phase 5: the cancel path. A trace that stops delivering events must stay
 // cancellable: the Cancel button aborts the fetch, surfaces the distinct
 // user-cancel copy, restores the controls, and leaves the form usable.

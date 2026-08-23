@@ -81,6 +81,16 @@
     });
     renderDependencies(button.dataset.filter);
   }));
+  // Developer-tool convention: "/" jumps to the primary field from anywhere
+  // that is not already text entry or an open dialog.
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "/" || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+    const target = event.target;
+    if (target instanceof HTMLElement && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+    if (methodDialog.open || radarDialog.open || linkDialog.open) return;
+    event.preventDefault();
+    input.focus();
+  });
   window.addEventListener("hashchange", () => {
     if (inFlight) return;
     const id = location.hash.slice(1);

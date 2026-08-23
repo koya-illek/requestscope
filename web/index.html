@@ -50,7 +50,7 @@
         <label for="url-input">Public URL</label>
         <div class="input-shell">
           <span class="protocol" aria-hidden="true">URL</span>
-          <input id="url-input" name="url" type="text" inputmode="url" autocomplete="url" spellcheck="false" placeholder="example.com" maxlength="2048" required>
+          <input id="url-input" name="url" type="text" inputmode="url" autocomplete="url" spellcheck="false" placeholder="example.com" maxlength="2048" required aria-keyshortcuts="/">
           <button type="submit" id="trace-button">
             <span>Trace request</span>
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4"/></svg>
@@ -60,6 +60,7 @@
           <span>Public HTTP/S targets only</span>
           <span>Reports expire after 14 days</span>
           <span>No login required</span>
+          <span>Press <kbd>/</kbd> to focus</span>
         </div>
         <details class="trace-options">
           <summary>
