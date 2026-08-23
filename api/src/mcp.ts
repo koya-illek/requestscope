@@ -61,36 +61,44 @@ export async function handleMcp(
     if (error instanceof McpRequestShapeError) return rpcError(null, error.jsonRpcCode, error.message, 400, cors);
     throw error;
   }
-  if (message.jsonrpc !== "2.0" || typeof message.method !== "string") return rpcError(message.id ?? null, -32600, "Invalid JSON-RPC request", 400, cors);
+  if (message.jsonrpc !== "2.0" || typeof message.method !== "string") return rpcError(requestIdOf(message), -32600, "Invalid JSON-RPC request", 400, cors);
 
+  const requestId = requestIdOf(message);
   if (message.method.startsWith("notifications/")) return new Response(null, { status: 202, headers: methodHeaders });
   if (message.id === undefined) return new Response(null, { status: 202, headers: methodHeaders });
 
   switch (message.method) {
     case "initialize":
-      return rpcResult(message.id, {
+      return rpcResult(requestId, {
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "requestscope", title: "RequestScope URL Risk", version: MCP_SERVER_VERSION },
         instructions: "Use trace_request for full DNS, redirect, HTTP, dependency, security-signal, and finding evidence; assess_url_risk for phishing and impersonation risk; and get_requestscope_report to retrieve a shared report. A low result never certifies a URL as safe. Set externalReputation true only after the user agrees that the original and final URL, including query values, may be sent to Google Web Risk and PhishTank, while Cloudflare's malware-filtering DNS receives their hostnames only.",
       }, cors);
     case "ping":
-      return rpcResult(message.id, {}, cors);
+      return rpcResult(requestId, {}, cors);
     case "tools/list":
-      return rpcResult(message.id, { tools: [traceTool(), riskTool(), reportTool()] }, cors);
+      return rpcResult(requestId, { tools: [traceTool(), riskTool(), reportTool()] }, cors);
     case "tools/call":
       try {
-        return await callTool(message.id, message.params, execute, options);
+        return await callTool(requestId, message.params, execute, options);
       } catch (error) {
         // Quota failures must stay transport-visible so clients can back off.
         if (error instanceof RateLimitError) {
-          return rpcError(message.id ?? null, -32000, error.message, 429, { ...cors, "Retry-After": "3600" });
+          return rpcError(requestId, -32000, error.message, 429, { ...cors, "Retry-After": "3600" });
         }
         throw error;
       }
     default:
-      return rpcError(message.id, -32601, `Method not found: ${message.method}`, 200, cors);
+      return rpcError(requestId, -32601, `Method not found: ${message.method}`, 200, cors);
   }
+}
+
+/** A JSON-RPC id is a string, number, or null. Anything else an envelope may
+ * carry (undefined, object, array) is answered with null instead of being
+ * reflected back into the error response. */
+function requestIdOf(message: McpRequest): string | number | null {
+  return typeof message.id === "string" || typeof message.id === "number" ? message.id : null;
 }
 
 async function callTool(id: string | number | null, params: unknown, execute: (name: string, input: Record<string, unknown>) => Promise<ScanReport | UrlRiskAssessment>, options: McpHandlerOptions): Promise<Response> {

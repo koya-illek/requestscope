@@ -139,6 +139,23 @@ describe("MCP Streamable HTTP endpoint", () => {
     await expect(syntax.json()).resolves.toMatchObject({ error: { code: -32700 } });
   });
 
+  it("normalises unusable JSON-RPC ids to null instead of reflecting them", async () => {
+    for (const id of [undefined, { nested: true }, ["array"]]) {
+      const response = await handleMcp(new Request("https://api.example/mcp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "resources/list", ...(id === undefined ? {} : { id }) }),
+      }), async () => assessment);
+      const body = await response.json<{ id: string | number | null }>();
+      expect(body.id).toBeNull();
+    }
+    // A well-formed id keeps its value on both success and error paths.
+    const known = await handleMcp(request("ping", {}, 7), async () => assessment);
+    await expect(known.json()).resolves.toMatchObject({ id: 7 });
+    const unknown = await handleMcp(request("resources/list", {}, "req-9"), async () => assessment);
+    await expect(unknown.json()).resolves.toMatchObject({ id: "req-9", error: { code: -32601 } });
+  });
+
   it("echoes allowed-origin CORS headers on JSON-RPC responses", async () => {
     const response = await handleMcp(request("initialize", {}), async () => assessment, {
       corsHeaders: { "Access-Control-Allow-Origin": "https://app.example" },
