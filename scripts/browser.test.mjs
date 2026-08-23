@@ -180,4 +180,32 @@ assert.equal(await cspPage.textContent("#trace-options-state"), "Optional");
 await cspContext.close();
 server.close();
 
+// Phase 4: the share flow. Loading #<reportId> must fetch and render the saved
+// report without pushing history or losing focus discipline, an invalid hash
+// must surface the INVALID_LINK notice, and dismissing it must clear the hash.
+const linkContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+const linkPage = await linkContext.newPage();
+let savedReportFetches = 0;
+await linkPage.route("**/api/health", async (route) => {
+  await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, reputationProviders: {} }) });
+});
+await linkPage.route("**/api/scans/abcdefghijklmnop*", async (route) => {
+  savedReportFetches += 1;
+  await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(report) });
+});
+await linkPage.goto(`${pathToFileURL(path.resolve(webRoot, "index.html")).href}#abcdefghijklmnop`);
+await linkPage.waitForSelector("#risk-verdict.high", { state: "visible" });
+assert.equal(await linkPage.textContent("#risk-verdict"), "HIGH · 66/100");
+assert.equal(savedReportFetches, 1);
+assert.equal(await linkPage.title(), "micros0ft.example: RequestScope");
+assert.equal(await linkPage.evaluate(() => document.activeElement?.id), "report-host");
+assert.equal(await linkPage.evaluate(() => location.hash), "#abcdefghijklmnop");
+await linkPage.evaluate(() => { location.hash = "not-a-report-id"; });
+await linkPage.waitForSelector("#error-panel:not(.hidden)");
+assert.equal(await linkPage.textContent("#error-code"), "INVALID_LINK");
+await linkPage.click("#error-close");
+assert.equal(await linkPage.locator("#error-panel.hidden").count(), 1);
+assert.equal(await linkPage.evaluate(() => location.hash), "");
+await linkContext.close();
+
 await browser.close();
