@@ -169,6 +169,10 @@
     inFlight = true;
     cancelRequested = false;
     state.rawUrl = null;
+    // The submit control must agree with the inFlight guard: runTrace bails
+    // silently while a load is active, so leaving the button enabled would
+    // turn a press into an invisible no-op.
+    traceButton.disabled = true;
     beginProgress("Loading saved report", true);
     errorPanel.classList.add("hidden");
     const controller = new AbortController();
@@ -218,6 +222,7 @@
       clearTimeout(idleTimer);
       activeController = null;
       inFlight = false;
+      traceButton.disabled = false;
     }
   }
 

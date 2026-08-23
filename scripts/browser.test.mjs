@@ -248,8 +248,36 @@ await linkPage.waitForSelector("#error-panel:not(.hidden)");
 assert.equal(await linkPage.textContent("#error-code"), "INVALID_LINK");
 await linkPage.click("#error-close");
 assert.equal(await linkPage.locator("#error-panel.hidden").count(), 1);
-assert.equal(await linkPage.evaluate(() => location.hash), "");
+await linkPage.evaluate(() => location.hash = "");
 await linkContext.close();
+
+// The submit control must agree with the inFlight guard while a shared
+// report loads: runTrace bails silently during a load, so an enabled button
+// would turn Enter into an invisible no-op.
+const loadGuardContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+const loadGuardPage = await loadGuardContext.newPage();
+await loadGuardPage.route("**/api/health", async (route) => {
+  await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, reputationProviders: {} }) });
+});
+let releaseSlowReport = () => {};
+const slowReport = new Promise((resolve) => { releaseSlowReport = resolve; });
+let slowReportServed = false;
+await loadGuardPage.route("**/api/scans/abcdefghijklmnop", async (route) => {
+  await slowReport.catch(() => {});
+  slowReportServed = true;
+  try {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(report) });
+  } catch {
+    // The context may already be gone.
+  }
+});
+await loadGuardPage.goto(`${pathToFileURL(path.resolve(webRoot, "index.html")).href}#abcdefghijklmnop`);
+await loadGuardPage.waitForFunction(() => document.querySelector("#trace-button")?.disabled === true);
+assert.equal(slowReportServed, false, "report body must not arrive before the guard is observed");
+releaseSlowReport();
+await loadGuardPage.waitForSelector("#risk-verdict.high", { state: "visible" });
+assert.equal(await loadGuardPage.locator("#trace-button[disabled]").count(), 0);
+await loadGuardContext.close();
 
 // Phase 5: the cancel path. A trace that stops delivering events must stay
 // cancellable: the Cancel button aborts the fetch, surfaces the distinct
