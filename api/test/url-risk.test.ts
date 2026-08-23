@@ -75,6 +75,35 @@ describe("URL risk assessment", () => {
     expect(lookalike?.confidence).toBe("medium");
   });
 
+  it("resolves an exact short organisation claim to its brand", () => {
+    const result = assessUrlRisk(report("aib-security.ie"), "https://aib-security.ie/", { claimedOrganisation: "AIB" });
+    const lookalike = result.findings.find((finding) => finding.code === "brand-lookalike");
+    expect(lookalike?.evidence.organisation).toBe("AIB");
+    expect(lookalike?.evidence.matchType).toBe("name-containment");
+    expect(lookalike?.score).toBe(22);
+  });
+
+  it("resolves an exact short alias claim to the owning organisation", () => {
+    const result = assessUrlRisk(report("aws-verify.net"), "https://aws-verify.net/", { claimedOrganisation: "AWS" });
+    const lookalike = result.findings.find((finding) => finding.code === "brand-lookalike");
+    expect(lookalike?.evidence.organisation).toBe("Amazon");
+    expect(lookalike?.evidence.matchType).toBe("name-containment");
+  });
+
+  it("keeps short-alias containment silent without a claimed brand", () => {
+    const result = assessUrlRisk(report("boi-secure.com"), "https://boi-secure.com/");
+    expect(result.findings.some((finding) => finding.code === "brand-lookalike")).toBe(false);
+    expect(result.verdict).toBe("low");
+  });
+
+  it("lets an explicit brand claim cover its short aliases in containment matching", () => {
+    const result = assessUrlRisk(report("boi-secure.com"), "https://boi-secure.com/", { claimedOrganisation: "Bank of Ireland" });
+    const lookalike = result.findings.find((finding) => finding.code === "brand-lookalike");
+    expect(lookalike?.evidence.organisation).toBe("Bank of Ireland");
+    expect(lookalike?.evidence.matchedName).toBe("boi");
+    expect(lookalike?.evidence.matchType).toBe("name-containment");
+  });
+
   it("does not flag ordinary compound words that merely share a brand alias", () => {
     for (const host of ["apple-orchard.com", "office-supplies.ie", "amazon-river-tours.com", "stripe-curtains.ie"]) {
       const result = assessUrlRisk(report(host), `https://${host}/`);

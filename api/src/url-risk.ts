@@ -88,7 +88,7 @@ export function assessUrlRisk(
     const candidate = host.split(".")[0].replace(/[^a-z0-9]/g, "");
     for (const entry of brand ? [brand] : BRANDS) {
       if (entry.domains.some((domain) => host === domain || host.endsWith(`.${domain}`))) continue;
-      const match = matchLookalike(host.split(".")[0], candidate, entry.aliases);
+      const match = matchLookalike(host.split(".")[0], candidate, entry.aliases, Boolean(brand));
       if (!match) continue;
       const detail = match.matchType === "edit-distance"
         ? `${host} resembles a known ${entry.organisation} name but is not one of its recognised domains.`
@@ -196,17 +196,17 @@ function add(findings: UrlRiskFinding[], code: string, severity: UrlRiskFinding[
 function resolveClaimedBrand(claimed: string | null) {
   if (!claimed) return null;
   const normalized = normalizeBrandName(claimed);
-  // Prefix matching keeps verbose real-world claims ("Microsoft Corporation",
-  // "Bank of Ireland Group") effective. Names shorter than this stay
-  // exact-only so a short alias like "boi" cannot absorb unrelated claims
+  // An exact match always resolves, no matter how short the name ("AIB",
+  // "AWS"). Prefix matching keeps verbose real-world claims ("Microsoft
+  // Corporation", "Bank of Ireland Group") effective but only from this
+  // length so a short alias like "boi" cannot absorb unrelated claims
   // ("Boiler Repair Co").
   const MIN_PREFIX_NAME_LENGTH = 4;
+  const matchesName = (name: string): boolean =>
+    normalized === name || (name.length >= MIN_PREFIX_NAME_LENGTH && normalized.startsWith(name));
   return BRANDS.find((entry) =>
-    entry.aliases.some((alias) => {
-      const name = normalizeBrandName(alias);
-      return name.length >= MIN_PREFIX_NAME_LENGTH && normalized.startsWith(name);
-    }) || normalizeBrandName(entry.organisation).length >= MIN_PREFIX_NAME_LENGTH
-      && normalized.startsWith(normalizeBrandName(entry.organisation)),
+    entry.aliases.some((alias) => matchesName(normalizeBrandName(alias)))
+    || matchesName(normalizeBrandName(entry.organisation)),
   ) || null;
 }
 
@@ -222,10 +222,12 @@ interface LookalikeMatch {
   confidence: UrlRiskFinding["confidence"];
 }
 
-/** Aliases shorter than this are too collision-prone for containment matching. */
+/** Aliases shorter than this are too collision-prone for containment matching
+ * unless the caller explicitly claimed the brand: the claim itself then
+ * provides the disambiguation that the length gate otherwise approximates. */
 const MIN_CONTAINMENT_ALIAS_LENGTH = 5;
 
-function matchLookalike(label: string, candidate: string, aliases: string[]): LookalikeMatch | null {
+function matchLookalike(label: string, candidate: string, aliases: string[], claimedBrand = false): LookalikeMatch | null {
   const exact = aliases.find((alias) => candidate === alias);
   if (exact) {
     // An exact brand name on an unrecognised domain may be a legitimate
@@ -235,7 +237,7 @@ function matchLookalike(label: string, candidate: string, aliases: string[]): Lo
   const typo = aliases.find((alias) => editDistanceWithinOne(candidate, alias));
   if (typo) return { matchedName: typo, matchType: "edit-distance", severity: "high", score: 32, confidence: "high" };
   const contained = aliases.find((alias) =>
-    alias.length >= MIN_CONTAINMENT_ALIAS_LENGTH && containsBrandToken(label, alias));
+    (claimedBrand || alias.length >= MIN_CONTAINMENT_ALIAS_LENGTH) && containsBrandToken(label, alias));
   if (contained) return { matchedName: contained, matchType: "name-containment", severity: "medium", score: 16, confidence: "medium" };
   return null;
 }
