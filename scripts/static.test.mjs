@@ -23,7 +23,7 @@ test("public shell exposes metadata, keyboard navigation and privacy", async () 
   assert.doesNotMatch(html, /class="(?:eyebrow|section-kicker)"/);
   assert.doesNotMatch(html, /—/);
   assert.match(html, /Skip to URL trace/);
-  assert.ok(html.includes("./privacy.html"));
+  assert.ok(html.includes("./privacy"));
   assert.ok(html.includes("Include external reputation"));
   assert.ok(html.includes("Advanced trace options"));
   assert.ok(html.includes("Cloudflare's malware-filtering DNS receives hostnames only"));
@@ -42,6 +42,10 @@ test("public shell exposes metadata, keyboard navigation and privacy", async () 
   assert.ok(!headers.includes("challenges.cloudflare.com"));
   assert.match(robots, /Sitemap:/);
   assert.ok(sitemap.includes("requestscope.illek.ie"));
+  // Workers Assets redirects /privacy.html to /privacy, so every reference
+  // must use the extensionless form that serves 200 directly.
+  assert.ok(sitemap.includes("<loc>https://requestscope.illek.ie/privacy</loc>"));
+  assert.ok(!sitemap.includes(".html</loc>"));
   assert.ok(openapi.includes("/api/health:"));
   assert.ok(openapi.includes("application/x-ndjson"));
   assert.ok(openapi.includes("claimedOrganisation:"));
