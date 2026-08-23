@@ -120,6 +120,90 @@ describe("mapDependencies", () => {
     expect(result.sources.certTransparency.subdomains).not.toContain("evil-example.com");
   });
 
+  it("extracts wildcard-scheme hosts and rejects hashes, keeping host shape strict", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (url.hostname === "crt.sh") return Response.json([]);
+      return new Response("", { status: 404 });
+    }));
+
+    const result = await mapDependencies(
+      "example.com",
+      new URL("https://example.com"),
+      {
+        "content-security-policy": [
+          "img-src https://*.cloudfront.net *.googleusercontent.com",
+          "script-src 'sha256-abcdef123456' sharethis.com shard.example.net https://js.example.org/bundle.js",
+        ].join("; "),
+      },
+      [],
+    );
+
+    expect(result.sources.csp.domains).toContain("cloudfront.net");
+    expect(result.sources.csp.domains).toContain("googleusercontent.com");
+    expect(result.sources.csp.domains).toContain("sharethis.com");
+    expect(result.sources.csp.domains).toContain("shard.example.net");
+    expect(result.sources.csp.domains).toContain("js.example.org");
+    for (const domain of result.sources.csp.domains) {
+      expect(domain, domain).toMatch(/^[a-z0-9.-]+$/);
+      expect(domain, domain).not.toContain("/");
+    }
+  });
+
+  it("reports Certificate Transparency truncation honestly in both directions", async () => {
+    const manyNames = Array.from({ length: 130 }, (_, i) => ({
+      name_value: `host-${String(i).padStart(3, "0")}.example.com`,
+      not_before: "2026-01-01T00:00:00.000Z",
+      not_after: "2027-01-01T00:00:00.000Z",
+    }));
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (url.hostname === "crt.sh") return Response.json(manyNames);
+      return new Response("", { status: 404 });
+    }));
+
+    const overCap = await mapDependencies("example.com", new URL("https://example.com"), {}, []);
+    expect(overCap.sources.certTransparency.subdomains.length).toBe(100);
+    expect(overCap.sources.certTransparency.total).toBe(130);
+    expect(overCap.sources.certTransparency.truncated).toBe(true);
+
+    // Many certificates reusing few names is not truncation.
+    const repeatedNames = Array.from({ length: 150 }, () => ({ name_value: "one.example.com" }));
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (url.hostname === "crt.sh") return Response.json(repeatedNames);
+      return new Response("", { status: 404 });
+    }));
+
+    const underCap = await mapDependencies("example.com", new URL("https://example.com"), {}, []);
+    expect(underCap.sources.certTransparency.total).toBe(1);
+    expect(underCap.sources.certTransparency.truncated).toBe(false);
+  });
+
+  it("keeps CT-observed domains out of the post-auth-only flag even when another source also saw them", async () => {
+    const fakeJs = `fetch("https://api.example.com/v1/data");`;
+
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (url.hostname === "crt.sh") return Response.json([{ name_value: "api.example.com" }]);
+      if (url.pathname.endsWith(".js")) {
+        return new Response(fakeJs, { headers: { "Content-Type": "application/javascript" } });
+      }
+      return new Response("", { status: 404 });
+    }));
+
+    const result = await mapDependencies(
+      "example.com",
+      new URL("https://example.com"),
+      {},
+      [{ url: "https://cdn.example.com/app.js", host: "cdn.example.com" }],
+    );
+
+    const api = result.domains.find((d) => d.domain === "api.example.com");
+    expect(api?.source).toBe("multiple");
+    expect(api?.postAuthOnly).toBe(false);
+  });
+
   it("handles missing CSP gracefully", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);

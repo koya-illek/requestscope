@@ -63,17 +63,21 @@ export async function mapDependencies(
   const certT = await queryCertTransparency(hostname, budget);
 
   const domainMap = new Map<string, MappedDomain>();
+  // Collapsed MappedDomain.source strings ("multiple") lose which channels
+  // produced a domain; the per-domain set keeps that information so the
+  // post-auth-only heuristic can still honour Certificate Transparency.
+  const domainSources = new Map<string, Set<MappedDomain["source"]>>();
 
   for (const domain of csp.domains) {
-    addDomain(domainMap, domain, "csp", "CSP directive");
+    addDomain(domainMap, domainSources, domain, "csp", "CSP directive");
   }
 
   for (const finding of jsBundles.patterns) {
-    addDomain(domainMap, finding.domain, "js-bundle", finding.context);
+    addDomain(domainMap, domainSources, finding.domain, "js-bundle", finding.context);
   }
 
   for (const subdomain of certT.subdomains) {
-    addDomain(domainMap, subdomain, "cert-transparency", "Certificate Transparency log");
+    addDomain(domainMap, domainSources, subdomain, "cert-transparency", "Certificate Transparency log");
   }
 
   const domains = [...domainMap.values()];
@@ -83,10 +87,11 @@ export async function mapDependencies(
     d.serviceName = match.name;
     d.piiRisk = classifierPiiRisk(d.domain, d.category);
     // This is a visibility heuristic, not evidence of an authenticated
-    // browser session. The UI labels it accordingly.
+    // browser session. The UI labels it accordingly. A name in public CT
+    // logs is externally visible by definition, whatever else also saw it.
     d.postAuthOnly = !csp.domains.includes(d.domain) &&
       !scriptDeps.some((s) => s.host === d.domain) &&
-      d.source !== "cert-transparency";
+      !(domainSources.get(d.domain)?.has("cert-transparency"));
   }
 
   // Detect SDKs from concatenated JS bundle text
@@ -179,6 +184,12 @@ function analyseCsp(raw?: string): CspAnalysis {
   };
 }
 
+/** A strict hostname shape for CSP-derived map entries: label characters
+ * only, at least two labels. CSP grammar permits paths and other punctuation
+ * in a host-source; those carry no registrable identity and would otherwise
+ * land in the dependency map as junk domains. */
+const CSP_HOST_SHAPE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
+
 function extractHostFromCspSource(source: string): string | null {
   const trimmed = source.trim().replace(/^["']/, "").replace(/["']$/, "");
 
@@ -186,24 +197,22 @@ function extractHostFromCspSource(source: string): string | null {
   if (/^(?:self|none|unsafe-inline|unsafe-eval|strict-dynamic|unsafe-hashes|wasm-unsafe-eval|report-sample|all|dynamic)$/i.test(trimmed)) {
     return null;
   }
-  if (trimmed.startsWith("nonce-") || trimmed.startsWith("sha")) return null;
   if (trimmed === "*") return null;
+  if (/^nonce-/i.test(trimmed)) return null;
+  // Hash sources carry no host information.
+  if (/^sha(?:256|384|512)-/i.test(trimmed)) return null;
 
-  // Scheme sources
-  const schemeMatch = trimmed.match(/^(?:https?|wss?|data|blob|filesystem|mediastream):/i);
-  if (schemeMatch && !trimmed.includes("://")) return null;
+  // Wildcard subdomains normalise to their parent host, bare or after a scheme.
+  const candidate = trimmed.replace(/^\*\./i, "").replace(/^([a-z][a-z0-9+.-]*:\/\/)\*\./i, "$1");
 
-  // Host source with optional scheme
-  const hostMatch = trimmed.match(/^(?:[a-z][a-z0-9+.-]*:\/\/)?([^:/\s*]+)/i);
+  // Scheme-only sources name no host.
+  if (/^(?:https?|wss?|data|blob|filesystem|mediastream):/i.test(candidate) && !candidate.includes("://")) return null;
+
+  const hostMatch = candidate.match(/^(?:[a-z][a-z0-9+.-]*:\/\/)?([^:/\s*]+)/i);
   if (!hostMatch) return null;
 
-  let host = hostMatch[1].toLowerCase().replace(/^\*/, "");
-  if (!host || !host.includes(".")) return null;
-
-  // Wildcard subdomain — normalise to the registrable domain
-  if (host.startsWith(".")) host = host.slice(1);
-
-  return host;
+  const host = hostMatch[1].toLowerCase();
+  return CSP_HOST_SHAPE.test(host) ? host : null;
 }
 
 async function scrapeJsBundles(scriptDeps: Array<{ url: string; host: string }>, budget?: RequestBudget, validatedHosts?: Map<string, PublicResolution>): Promise<{ analysis: JsBundleAnalysis; rawJsText: string }> {
@@ -257,11 +266,14 @@ async function scrapeJsBundles(scriptDeps: Array<{ url: string; host: string }>,
           const { done, value } = await reader.read();
           if (done) break;
           if (total + value.byteLength > MAX_BUNDLE_BYTES) {
-            const remaining = Math.max(0, MAX_BUNDLE_BYTES - total);
-            if (remaining) {
-              chunks.push(value.slice(0, remaining));
-              total += remaining;
-              if (budget) budget.inspectBytes(remaining);
+            // The budget's accepted value can be smaller than the cap room
+            // when the aggregate body budget runs out first; count only what
+            // was really inspected so decoded text never exceeds the books.
+            const room = Math.max(0, MAX_BUNDLE_BYTES - total);
+            const accepted = budget ? budget.inspectBytes(room) : room;
+            if (accepted > 0) {
+              chunks.push(value.slice(0, accepted));
+              total += accepted;
             }
             truncated = true;
             truncatedAny = true;
@@ -389,11 +401,10 @@ async function queryCertTransparency(hostname: string, budget?: RequestBudget): 
     } catch {
       return { attempted: 1, successful: 0, failed: 1, skipped: 0, subdomains: [], total: 0, error: "Certificate Transparency response was not valid JSON." };
     }
-    const subdomains = new Set<string>();
     const certificates = data
       .filter((entry) => entry.not_before && entry.not_after)
       .sort((a, b) => new Date(b.not_before!).getTime() - new Date(a.not_before!).getTime());
-
+    const subdomains = new Set<string>();
     for (const entry of data) {
       const names = (entry.name_value || "").split(/\n/);
       for (const name of names) {
@@ -402,17 +413,20 @@ async function queryCertTransparency(hostname: string, budget?: RequestBudget): 
           subdomains.add(clean);
         }
       }
-      if (subdomains.size >= MAX_CT_RESULTS) break;
     }
 
+    // Collect every unique name the payload contains, then slice: `truncated`
+    // then truthfully means "more names exist than are shown", and `total`
+    // always describes the full discovery instead of a cap-dependent count.
+    const sorted = [...subdomains].sort();
     return {
       attempted: 1,
       successful: 1,
       failed: 0,
       skipped: 0,
-      subdomains: [...subdomains].sort().slice(0, MAX_CT_RESULTS),
-      total: subdomains.size,
-      truncated: data.length > MAX_CT_RESULTS,
+      subdomains: sorted.slice(0, MAX_CT_RESULTS),
+      total: sorted.length,
+      truncated: sorted.length > MAX_CT_RESULTS,
       latest: certificates[0] ? { notBefore: certificates[0].not_before!, notAfter: certificates[0].not_after! } : undefined,
     };
   } catch (error) {
@@ -433,10 +447,18 @@ async function queryCertTransparency(hostname: string, budget?: RequestBudget): 
 
 function addDomain(
   map: Map<string, MappedDomain>,
+  sources: Map<string, Set<MappedDomain["source"]>>,
   domain: string,
   source: MappedDomain["source"],
   evidence: string,
 ): void {
+  let sourceSet = sources.get(domain);
+  if (!sourceSet) {
+    sourceSet = new Set<MappedDomain["source"]>();
+    sources.set(domain, sourceSet);
+  }
+  sourceSet.add(source);
+
   const existing = map.get(domain);
   if (existing) {
     existing.occurrences += 1;
