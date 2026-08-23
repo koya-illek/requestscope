@@ -125,6 +125,24 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 768, height: 102
   await context.close();
 }
 
+// The privacy notice is a canonical product page, so it receives the same
+// responsive, keyboard, and automated accessibility checks as the trace UI.
+for (const viewport of [{ width: 1440, height: 1000 }, { width: 768, height: 1024 }, { width: 390, height: 844 }]) {
+  const context = await browser.newContext({ viewport });
+  const page = await context.newPage();
+  await page.goto(pathToFileURL(path.resolve(webRoot, "privacy.html")).href);
+  assert.equal(await page.locator("h1").textContent(), "RequestScope privacy notice");
+  await page.keyboard.press("Tab");
+  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("skip-link")), true);
+  assert.equal(await page.locator(".skip-link").textContent(), "Skip to privacy notice");
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  assert.equal(overflow, false, `${viewport.width}px privacy layout has horizontal overflow`);
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  assert.deepEqual(accessibility.violations, [], `${viewport.width}px privacy layout has accessibility violations`);
+  await page.screenshot({ path: `/tmp/requestscope-privacy-${viewport.width}.png`, fullPage: true });
+  await context.close();
+}
+
 // Phase 3: serve the shell over HTTP with the production CSP header and fail
 // on any console or page error, so a policy change cannot break the app
 // unnoticed before deploy.

@@ -707,6 +707,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .site-header nav .text-button { display: none; }
   .hero { padding: 62px 0 54px; }
   h1 { font-size: clamp(48px, 16vw, 76px); }
+  .privacy-page h1 { font-size: clamp(44px, 14vw, 64px); }
   .input-shell { height: auto; grid-template-columns: auto 1fr; }
   /* ≥16px keeps Safari from zooming the viewport when the field is focused. */
   .input-shell input { height: 64px; padding-right: 12px; font-size: 16px; }
