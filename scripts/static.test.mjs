@@ -74,6 +74,15 @@ test("public shell exposes metadata, keyboard navigation and privacy", async () 
   assert.ok(!privacy.includes("report reads and MCP handshake or discovery requests do not write"));
   assert.doesNotMatch(privacy, /class="(?:eyebrow|section-kicker)"/);
   assert.doesNotMatch(privacy, /—/);
+  // The privacy page is indexable and shareable: it must carry the same
+  // metadata baseline as the shell (50-character description, OG/Twitter
+  // card, and structured data).
+  const privacyDescription = privacy.match(/name="description" content="([^"]+)"/)?.[1] || "";
+  assert.ok(privacyDescription.length >= 50, "privacy meta description must be at least 50 characters");
+  assert.ok(privacy.includes('property="og:title"'));
+  assert.ok(privacy.includes('property="og:image"'));
+  assert.ok(privacy.includes('name="twitter:card"'));
+  assert.ok(privacy.includes('type="application/ld+json"'));
 });
 
 test("CSP forbids inline styles and no markup injects a style attribute", async () => {
