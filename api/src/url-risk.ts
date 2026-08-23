@@ -1,4 +1,4 @@
-import { classifyHostname, registrableDomain } from "./classifier";
+import { classifyHostname, registrableDomain, type DomainCategory } from "./classifier";
 import type { ReputationAssessment, ScanReport, UrlRiskAssessment, UrlRiskFinding } from "./types";
 
 const SHORTENERS = new Set([
@@ -7,22 +7,22 @@ const SHORTENERS = new Set([
   "tinyurl.com", "trib.al", "urlz.fr", "youtu.be",
 ]);
 
-const BRANDS: Array<{ organisation: string; domains: string[]; aliases: string[] }> = [
-  { organisation: "Microsoft", domains: ["microsoft.com", "microsoftonline.com", "office.com", "live.com"], aliases: ["microsoft", "office", "m365", "outlook"] },
-  { organisation: "Google", domains: ["google.com", "gmail.com"], aliases: ["google", "gmail"] },
-  { organisation: "Apple", domains: ["apple.com", "icloud.com"], aliases: ["apple", "icloud"] },
-  { organisation: "Amazon", domains: ["amazon.com", "amazon.co.uk", "amazon.ie"], aliases: ["amazon", "aws"] },
-  { organisation: "PayPal", domains: ["paypal.com"], aliases: ["paypal"] },
-  { organisation: "Stripe", domains: ["stripe.com"], aliases: ["stripe"] },
-  { organisation: "Meta", domains: ["facebook.com", "instagram.com", "meta.com"], aliases: ["facebook", "instagram", "meta"] },
-  { organisation: "DocuSign", domains: ["docusign.com", "docusign.net"], aliases: ["docusign"] },
-  { organisation: "Dropbox", domains: ["dropbox.com"], aliases: ["dropbox"] },
-  { organisation: "LinkedIn", domains: ["linkedin.com"], aliases: ["linkedin"] },
-  { organisation: "Adobe", domains: ["adobe.com"], aliases: ["adobe", "acrobat"] },
-  { organisation: "Cloudflare", domains: ["cloudflare.com"], aliases: ["cloudflare"] },
-  { organisation: "Revenue Ireland", domains: ["revenue.ie"], aliases: ["revenue"] },
-  { organisation: "Bank of Ireland", domains: ["bankofireland.com", "365online.com"], aliases: ["bankofireland", "boi", "365online"] },
-  { organisation: "AIB", domains: ["aib.ie"], aliases: ["aib"] },
+const BRANDS: Array<{ organisation: string; domains: string[]; aliases: string[]; category: DomainCategory }> = [
+  { organisation: "Microsoft", domains: ["microsoft.com", "microsoftonline.com", "office.com", "live.com"], aliases: ["microsoft", "office", "m365", "outlook"], category: "functional" },
+  { organisation: "Google", domains: ["google.com", "gmail.com"], aliases: ["google", "gmail"], category: "functional" },
+  { organisation: "Apple", domains: ["apple.com", "icloud.com"], aliases: ["apple", "icloud"], category: "functional" },
+  { organisation: "Amazon", domains: ["amazon.com", "amazon.co.uk", "amazon.ie"], aliases: ["amazon", "aws"], category: "functional" },
+  { organisation: "PayPal", domains: ["paypal.com"], aliases: ["paypal"], category: "payment" },
+  { organisation: "Stripe", domains: ["stripe.com"], aliases: ["stripe"], category: "payment" },
+  { organisation: "Meta", domains: ["facebook.com", "instagram.com", "meta.com"], aliases: ["facebook", "instagram", "meta"], category: "social" },
+  { organisation: "DocuSign", domains: ["docusign.com", "docusign.net"], aliases: ["docusign"], category: "functional" },
+  { organisation: "Dropbox", domains: ["dropbox.com"], aliases: ["dropbox"], category: "functional" },
+  { organisation: "LinkedIn", domains: ["linkedin.com"], aliases: ["linkedin"], category: "social" },
+  { organisation: "Adobe", domains: ["adobe.com"], aliases: ["adobe", "acrobat"], category: "functional" },
+  { organisation: "Cloudflare", domains: ["cloudflare.com"], aliases: ["cloudflare"], category: "cdn" },
+  { organisation: "Revenue Ireland", domains: ["revenue.ie"], aliases: ["revenue"], category: "functional" },
+  { organisation: "Bank of Ireland", domains: ["bankofireland.com", "365online.com"], aliases: ["bankofireland", "boi", "365online"], category: "payment" },
+  { organisation: "AIB", domains: ["aib.ie"], aliases: ["aib"], category: "payment" },
 ];
 
 export interface UrlRiskContext {
@@ -148,7 +148,7 @@ export function assessUrlRisk(
   const services = hosts.flatMap((hostname) => {
     const registered = registrableDomain(hostname);
     const brandMatch = BRANDS.find((entry) => entry.domains.includes(registered));
-    if (brandMatch) return [{ hostname, organisation: brandMatch.organisation, category: "functional" as const }];
+    if (brandMatch) return [{ hostname, organisation: brandMatch.organisation, category: brandMatch.category }];
     const match = classifyHostname(hostname);
     return match.name ? [{ hostname, organisation: match.name, category: match.category }] : [];
   });

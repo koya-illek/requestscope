@@ -191,4 +191,23 @@ describe("URL risk assessment", () => {
     expect(result.riskScore).toBeGreaterThanOrEqual(60);
     expect(result.findings.some((finding) => finding.source === "reputation_provider")).toBe(true);
   });
+
+  it("categorises brand-owned services by their real function, not always functional", () => {
+    const result = assessUrlRisk(report("www.paypal.com"), "https://www.paypal.com/");
+    const service = result.services.find((entry) => entry.hostname === "www.paypal.com");
+    expect(service?.organisation).toBe("PayPal");
+    expect(service?.category).toBe("payment");
+
+    const stripe = assessUrlRisk(report("stripe.com"), "https://stripe.com/");
+    expect(stripe.services[0]?.category).toBe("payment");
+
+    const linkedIn = assessUrlRisk(report("linkedin.com"), "https://linkedin.com/");
+    expect(linkedIn.services[0]?.category).toBe("social");
+
+    const cloudflare = assessUrlRisk(report("cloudflare.com"), "https://cloudflare.com/");
+    expect(cloudflare.services[0]?.category).toBe("cdn");
+
+    const microsoft = assessUrlRisk(report("microsoft.com"), "https://microsoft.com/");
+    expect(microsoft.services[0]).toMatchObject({ organisation: "Microsoft", category: "functional" });
+  });
 });
