@@ -43,10 +43,11 @@ function auditHtml(source) {
   const canonical = requireSingle(/<link\b[^>]*\brel=["']canonical["'][^>]*\bhref=["']([^"']+)["'][^>]*>/gi, "canonical link")?.[1] || "";
   if (!/^https:\/\/requestscope\.illek\.ie(?:\/|$)/.test(canonical)) errors.push("canonical URL must use requestscope.illek.ie over HTTPS");
 
-  for (const property of ["og:title", "og:description", "og:url", "og:image"]) {
+  for (const property of ["og:title", "og:description", "og:url", "og:image", "og:site_name", "og:locale"]) {
     if (!new RegExp(`<meta\\b[^>]*\\bproperty=["']${property}["']`, "i").test(source)) errors.push(`missing ${property}`);
   }
   if (!/<meta\b[^>]*\bname=["']twitter:card["']/i.test(source)) errors.push("missing twitter:card");
+  if (!/<meta\b[^>]*\bname=["']twitter:image:alt["']/i.test(source)) errors.push("missing twitter:image:alt");
 
   const jsonLd = matches(/<script\b[^>]*\btype=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
   if (!jsonLd.length) errors.push("missing JSON-LD");
