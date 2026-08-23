@@ -200,6 +200,16 @@ assert.equal(savedReportFetches, 1);
 assert.equal(await linkPage.title(), "micros0ft.example: RequestScope");
 assert.equal(await linkPage.evaluate(() => document.activeElement?.id), "report-host");
 assert.equal(await linkPage.evaluate(() => location.hash), "#abcdefghijklmnop");
+
+// Regression: with no reputation provider configured, the health check must
+// disable the consent checkbox and replace its copy instead of letting the
+// visitor enable a lookup that cannot run.
+await linkPage.waitForFunction(() => document.querySelector("#external-reputation")?.disabled === true);
+assert.equal(await linkPage.textContent("#reputation-toggle-text strong"), "External reputation unavailable");
+assert.equal(
+  await linkPage.textContent("#reputation-toggle-text small"),
+  "Provider credentials are not configured on this deployment.",
+);
 await linkPage.evaluate(() => { location.hash = "not-a-report-id"; });
 await linkPage.waitForSelector("#error-panel:not(.hidden)");
 assert.equal(await linkPage.textContent("#error-code"), "INVALID_LINK");
@@ -207,5 +217,50 @@ await linkPage.click("#error-close");
 assert.equal(await linkPage.locator("#error-panel.hidden").count(), 1);
 assert.equal(await linkPage.evaluate(() => location.hash), "");
 await linkContext.close();
+
+// Phase 5: the cancel path. A trace that stops delivering events must stay
+// cancellable: the Cancel button aborts the fetch, surfaces the distinct
+// user-cancel copy, restores the controls, and leaves the form usable.
+const cancelContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+const cancelPage = await cancelContext.newPage();
+let stallStarted = 0;
+let releaseStalledStream = () => {};
+const stalledStream = new Promise((resolve) => { releaseStalledStream = resolve; });
+await cancelPage.route("**/api/health", async (route) => {
+  await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, reputationProviders: {} }) });
+});
+await cancelPage.route("**/api/scans/stream", async (route) => {
+  stallStarted += 1;
+  if (stallStarted === 1) {
+    await stalledStream.catch(() => {});
+    try {
+      await route.fulfill({ status: 200, contentType: "application/x-ndjson", body: "" });
+    } catch {
+      // The aborted fetch no longer needs a response.
+    }
+    return;
+  }
+  const events = ["accepted", "validated", "dns", "hop", "response", "complete"]
+    .map((stage) => JSON.stringify({ type: "progress", stage, message: `Stage ${stage}` }));
+  await route.fulfill({
+    status: 200,
+    contentType: "application/x-ndjson",
+    body: `${events.join("\n")}\n${JSON.stringify({ type: "result", report })}\n`,
+  });
+});
+await cancelPage.goto(pathToFileURL(path.resolve(webRoot, "index.html")).href);
+await cancelPage.fill("#url-input", "https://micros0ft.example/login");
+await cancelPage.click("#trace-button");
+await cancelPage.waitForSelector("#progress-panel:not(.hidden)");
+await cancelPage.click("#cancel-trace");
+await cancelPage.waitForSelector("#error-panel:not(.hidden)");
+assert.equal(await cancelPage.textContent("#error-message"), "Trace cancelled.");
+assert.equal(await cancelPage.locator("#progress-panel.hidden").count(), 1);
+assert.equal(await cancelPage.locator("#trace-button[disabled]").count(), 0);
+// The form must stay usable for a fresh trace without reloading.
+await cancelPage.click("#trace-button");
+await cancelPage.waitForSelector("#risk-verdict.high", { state: "visible" });
+assert.equal(stallStarted, 2);
+await cancelContext.close();
 
 await browser.close();
