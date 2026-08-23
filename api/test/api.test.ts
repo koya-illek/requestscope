@@ -185,6 +185,47 @@ describe("rate-limited public access", () => {
   });
 });
 
+describe("scheduled retention cleanup", () => {
+  it("deletes expired reports and stale quota rows in one D1 batch", async () => {
+    const statements: Array<{ sql: string; values: unknown[] }> = [];
+    const prepare = vi.fn((sql: string) => {
+      const statement = {
+        sql,
+        values: [] as unknown[],
+        bind: vi.fn((...values: unknown[]) => {
+          statement.values = values;
+          return statement;
+        }),
+      };
+      statements.push(statement);
+      return statement;
+    });
+    const batch = vi.fn(async () => []);
+    const db = { prepare, batch } as unknown as D1Database;
+    const pending: Promise<unknown>[] = [];
+    const scheduledContext = {
+      waitUntil(promise: Promise<unknown>) {
+        pending.push(promise);
+      },
+      passThroughOnException() {},
+      props: {},
+    } as unknown as ExecutionContext;
+
+    await worker.scheduled({} as ScheduledController, { ...env, DB: db }, scheduledContext);
+    expect(pending).toHaveLength(1);
+    await Promise.all(pending);
+
+    expect(batch).toHaveBeenCalledOnce();
+    expect(batch).toHaveBeenCalledWith(statements);
+    expect(statements).toHaveLength(3);
+    expect(statements[0].sql).toMatch(/DELETE FROM scans WHERE expires_at <= \?/);
+    expect(statements[0].values).toHaveLength(1);
+    expect(prepare).toHaveBeenCalledTimes(3);
+    expect(prepare.mock.calls[1][0]).toMatch(/DELETE FROM rate_limits WHERE window_date < date\('now', '-2 day'\)/);
+    expect(prepare.mock.calls[2][0]).toMatch(/DELETE FROM provider_usage WHERE updated_at < datetime\('now', '-90 day'\)/);
+  });
+});
+
 describe("HEAD probes on read endpoints", () => {
   it("answers HEAD /api/health with GET headers and no body", async () => {
     const response = await worker.fetch(new Request("https://api.example/api/health", { method: "HEAD" }), env, ctx);
