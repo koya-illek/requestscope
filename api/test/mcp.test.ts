@@ -22,6 +22,10 @@ describe("MCP Streamable HTTP endpoint", () => {
     const response = await handleMcp(request("initialize", { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "test", version: "1" } }), async () => assessment);
     expect(response.status).toBe(200);
     expect(response.headers.get("mcp-protocol-version")).toBe("2025-11-25");
+    expect(response.headers.get("strict-transport-security")).toContain("max-age=31536000");
+    expect(response.headers.get("permissions-policy")).toBe("camera=(), microphone=(), geolocation=()");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
     await expect(response.json()).resolves.toMatchObject({ result: { protocolVersion: "2025-11-25", serverInfo: { name: "requestscope" } } });
   });
 
@@ -90,6 +94,9 @@ describe("MCP Streamable HTTP endpoint", () => {
   it("returns 405 for an optional standalone GET stream", async () => {
     const response = await handleMcp(new Request("https://api.example/mcp"), async () => assessment);
     expect(response.status).toBe(405);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("strict-transport-security")).toContain("max-age=31536000");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
   });
 
   it("surfaces rate limits as an HTTP 429 JSON-RPC error instead of a tool result", async () => {

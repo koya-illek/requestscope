@@ -5,6 +5,14 @@ import { MCP_SERVER_VERSION } from "./version";
 
 const MCP_PROTOCOL_VERSION = "2025-11-25";
 const MAX_MCP_REQUEST_BYTES = 16 * 1024;
+const MCP_SECURITY_HEADERS = {
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "no-referrer",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  "X-Frame-Options": "DENY",
+  "X-Robots-Tag": "noindex, nofollow",
+};
 
 interface McpRequest {
   jsonrpc?: unknown;
@@ -36,7 +44,7 @@ export async function handleMcp(
   options: McpHandlerOptions = {},
 ): Promise<Response> {
   const cors = options.corsHeaders || {};
-  const methodHeaders = { Allow: "POST, OPTIONS", "X-Robots-Tag": "noindex, nofollow", ...cors };
+  const methodHeaders = { ...MCP_SECURITY_HEADERS, "Cache-Control": "no-store", Allow: "POST, OPTIONS", ...cors };
   if (request.method === "GET") {
     return new Response(null, { status: 405, headers: methodHeaders });
   }
@@ -296,11 +304,10 @@ function rpc(payload: unknown, status = 200, cors: Record<string, string> = {}):
     status,
     headers: {
       ...cors,
+      ...MCP_SECURITY_HEADERS,
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "no-store",
       "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
-      "X-Content-Type-Options": "nosniff",
-      "X-Robots-Tag": "noindex, nofollow",
     },
   });
 }
