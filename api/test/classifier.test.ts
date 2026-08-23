@@ -27,6 +27,15 @@ describe("domain classification label boundary", () => {
     expect(classifyDomain("challenges.cloudflare.com").name).toBe("Cloudflare Turnstile");
   });
 
+  it("requires the Turnstile suffix to end the hostname", () => {
+    expect(classifyDomain("sub.turnstile.site").name).toBe("Cloudflare Turnstile");
+    for (const host of ["turnstile.sitedemo.com", "evil.turnstile.site.attacker.com"]) {
+      const match = classifyDomain(host);
+      expect(match.category, host).toBe("unknown");
+      expect(match.name, host).toBeNull();
+    }
+  });
+
   it("keeps the Irish service entries working", () => {
     expect(classifyDomain("www.revenue.ie").name).toBe("Revenue IE");
     expect(classifyDomain("bankofireland.com").name).toBe("Bank of Ireland");

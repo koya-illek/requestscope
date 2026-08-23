@@ -141,7 +141,7 @@ export const DOMAIN_DATABASE: Array<[RegExp, string, DomainCategory]> = [
   /* ----------------------------- CDN/Hosting ------------------------------ */
   [/cloudflareinsights\.com$|cloudflare\.com\/cdn-cgi/i, "Cloudflare Insights", "cdn"],
   [/cdnjs\.cloudflare\.com$/i, "cdnjs (Cloudflare)", "cdn"],
-  [/challenges\.cloudflare\.com$|turnstile\.site/i, "Cloudflare Turnstile", "security"],
+  [/challenges\.cloudflare\.com$|turnstile\.site$/i, "Cloudflare Turnstile", "security"],
   [/cloudflare\.com$/i, "Cloudflare", "cdn"],
   [/jsdelivr\.net$/i, "jsDelivr", "cdn"],
   [/unpkg\.com$/i, "unpkg", "cdn"],
@@ -237,7 +237,6 @@ export const DOMAIN_DATABASE: Array<[RegExp, string, DomainCategory]> = [
   /* ------------------------------ Security -------------------------------- */
   [/recaptcha\.net$|recaptcha\.google\.com$|www\.google\.com\/recaptcha/i, "reCAPTCHA", "security"],
   [/hcaptcha\.com$|hcaptcha\.net$/i, "hCaptcha", "security"],
-  [/challenges\.cloudflare\.com$|turnstile\.site$/i, "Cloudflare Turnstile", "security"],
   [/cloudflare\.com\/cdn-cgi\/challenge/i, "Cloudflare Challenge", "security"],
   [/arc\.io$|arc\.io\/api$/i, "Arc.io", "security"],
   [/perimeterx\.net$|px-cdn\.net$|px-cloud\.net$|humansecurity\.com$|px-cdn\.net$/i, "PerimeterX/HUMAN", "security"],
