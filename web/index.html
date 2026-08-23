@@ -157,6 +157,7 @@
         </div>
         <div class="report-actions">
           <button class="secondary-button" id="copy-link" type="button" aria-live="polite">Copy share link</button>
+          <button class="secondary-button" id="copy-markdown" type="button" aria-live="polite">Copy as Markdown</button>
           <button class="secondary-button" id="export-json" type="button" aria-live="polite">Export JSON</button>
           <button class="secondary-button" id="cloudflare-scan" type="button">Scan on Cloudflare Radar</button>
           <button class="icon-button" id="new-trace" type="button" aria-label="Start a new trace">+</button>
@@ -328,12 +329,12 @@
     </div>
   </dialog>
 
-  <dialog id="link-dialog" aria-labelledby="link-dialog-title">
+  <dialog id="link-dialog" aria-labelledby="link-dialog-title" aria-describedby="link-dialog-copy">
     <button class="dialog-close" id="link-close" type="button" aria-label="Close">×</button>
     <h2 id="link-dialog-title">Copy this report link</h2>
-    <p class="dialog-copy">Automatic copying was blocked by the browser. Select the link below and copy it manually.</p>
-    <label class="dialog-field-label" for="link-field">Share link
-      <input id="link-field" name="shareLink" type="text" readonly>
+    <p class="dialog-copy" id="link-dialog-copy">Automatic copying was blocked by the browser. Select the link below and copy it manually.</p>
+    <label class="dialog-field-label" for="link-field"><span id="link-dialog-label">Share link</span>
+      <textarea id="link-field" name="shareLink" rows="4" readonly></textarea>
     </label>
     <div class="dialog-actions">
       <button class="primary-button" id="link-select" type="button" autofocus>Select all</button>

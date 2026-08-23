@@ -54,6 +54,7 @@
     activeController?.abort();
   });
   $("#copy-link").addEventListener("click", copyShareLink);
+  $("#copy-markdown").addEventListener("click", copyReportMarkdown);
   $("#export-json").addEventListener("click", exportJson);
   $("#cloudflare-scan").addEventListener("click", openCloudflareScan);
   $("#radar-cancel").addEventListener("click", () => radarDialog.close());
@@ -515,10 +516,128 @@
     } catch {
       // Clipboard permission or focus rules blocked the write; the link
       // becomes a designed, selectable surface instead of a blocking prompt.
-      $("#link-field").value = link;
-      linkDialog.showModal();
-      selectShareLink();
+      openManualCopyDialog({
+        title: "Copy this report link",
+        description: "Automatic copying was blocked by the browser. Select the link below and copy it manually.",
+        fieldLabel: "Share link",
+        value: link,
+      });
     }
+  }
+
+  async function copyReportMarkdown() {
+    if (!state.report) return;
+    const markdown = buildReportMarkdown(state.report);
+    try {
+      await navigator.clipboard.writeText(markdown);
+      flashButton($("#copy-markdown"), "Copied");
+    } catch {
+      openManualCopyDialog({
+        title: "Copy this report as Markdown",
+        description: "Automatic copying was blocked by the browser. Select the markdown below and copy it manually.",
+        fieldLabel: "Markdown report",
+        value: markdown,
+      });
+    }
+  }
+
+  /** One selectable fallback surface for every clipboard flow; the labels are
+   * rewritten per call so the dialog never misdescribes its contents. The
+   * field is a textarea because input values strip line breaks, which would
+   * silently corrupt a markdown report. */
+  function openManualCopyDialog({ title, description, fieldLabel, value }) {
+    $("#link-dialog-title").textContent = title;
+    $("#link-dialog-copy").textContent = description;
+    $("#link-dialog-label").textContent = fieldLabel;
+    const field = $("#link-field");
+    field.value = value;
+    linkDialog.showModal();
+    selectShareLink();
+  }
+
+  /** A paste-ready evidence brief for tickets and AI chats, rendered from the
+   * same redacted report the UI shows; nothing here is fetched or decrypted
+   * beyond what the server already stored. */
+  function buildReportMarkdown(report) {
+    const lines = [`# RequestScope report: ${report.hostname}`, ""];
+    const risk = report.urlRisk;
+    if (risk) {
+      lines.push(
+        `**Verdict:** ${String(risk.verdict).toUpperCase()} · ${risk.riskScore}/100 (${risk.confidence} confidence)`,
+        "",
+        risk.summary,
+        ""
+      );
+      if (risk.findings.length) {
+        lines.push("## Risk evidence", "");
+        for (const item of risk.findings) {
+          lines.push(`- **${String(item.severity).toUpperCase()}** ${item.title} (+${Number(item.score) || 0})`);
+          lines.push(`  ${item.detail}`);
+        }
+        lines.push("");
+      }
+      if (risk.reputation?.providers?.length) {
+        lines.push("## External reputation", "");
+        for (const provider of risk.reputation.providers) {
+          lines.push(`- **${providerName(provider.provider)}** (${provider.target} URL): ${String(provider.status).replaceAll("_", " ")}`);
+          lines.push(`  ${provider.detail}`);
+        }
+        lines.push("");
+      }
+    }
+    lines.push("## Request path", "");
+    report.http.hops.forEach((hop, index) => {
+      const status = Number.isFinite(hop.status) && hop.status !== 0 ? hop.status : "ERR";
+      lines.push(`${index + 1}. HTTP ${status} ${hop.url}${hop.location ? ` -> ${hop.location}` : ""} (${formatMs(hop.elapsedMs)})`);
+    });
+    lines.push("");
+    if (report.dns.queries.length) {
+      lines.push("## DNS observations", "");
+      for (const query of report.dns.queries) {
+        for (const answer of query.answers) {
+          lines.push(`- ${answer.type} ${query.name} -> ${answer.data} (TTL ${Number(answer.ttl) || 0}s)`);
+        }
+        if (!query.answers.length) lines.push(`- ${query.type} ${query.name}: ${query.error || `DNS status ${query.status}`}`);
+      }
+      lines.push("");
+    }
+    if (report.findings.length) {
+      lines.push("## Derived findings", "");
+      for (const item of report.findings) {
+        lines.push(`- **${String(item.severity).toUpperCase()}** ${item.title}`);
+        lines.push(`  ${item.detail} (evidence: ${item.evidencePath})`);
+      }
+      lines.push("");
+    }
+    const deps = report.dependencies;
+    lines.push(
+      "## Page dependencies",
+      "",
+      `${deps.total} HTML references: ${deps.firstParty} first-party, ${deps.thirdParty} third-party across ${deps.uniqueHosts.length} hosts.`,
+      ""
+    );
+    if (deps.uniqueHosts.length) {
+      lines.push(`Hosts: ${deps.uniqueHosts.slice(0, 15).join(", ")}${deps.uniqueHosts.length > 15 ? ", …" : ""}`, "");
+    }
+    if (report.coverage) {
+      const phases = report.coverage.phases;
+      lines.push(
+        "## Coverage",
+        "",
+        `- core trace: ${phases.core.status}`,
+        `- dependency map: ${phases.dependencies.status}`,
+        `- reputation: ${phases.reputation.status}`,
+        ""
+      );
+    }
+    lines.push(
+      "---",
+      "",
+      `Full evidence: ${location.origin}${location.pathname}#${report.id}`,
+      "Timings are Cloudflare edge observations, not browser measurements.",
+      "A low risk verdict does not certify that a URL is safe."
+    );
+    return lines.join("\n");
   }
 
   function selectShareLink() {

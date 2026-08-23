@@ -210,6 +210,19 @@ assert.equal(await cspPage.inputValue("#claimed-organisation"), "");
 assert.equal(await cspPage.isChecked("#map-deps"), false);
 assert.equal(await cspPage.isChecked("#external-reputation"), false);
 assert.equal(await cspPage.textContent("#trace-options-state"), "Optional");
+
+// With clipboard access granted, Copy as Markdown must write the brief
+// directly and confirm on the button.
+await cspPage.fill("#url-input", "https://micros0ft.example/login");
+await cspPage.click("#trace-button");
+await cspPage.waitForSelector("#risk-verdict.high", { state: "visible" });
+await cspContext.grantPermissions(["clipboard-read", "clipboard-write"], { origin: `http://127.0.0.1:${server.address().port}` });
+await cspPage.click("#copy-markdown");
+await cspPage.waitForFunction(() => document.querySelector("#copy-markdown")?.textContent === "Copied");
+const clipboardMarkdown = await cspPage.evaluate(() => navigator.clipboard.readText());
+assert.match(clipboardMarkdown, /^# RequestScope report: micros0ft\.example/);
+assert.match(clipboardMarkdown, /\*\*Verdict:\*\* HIGH · 66\/100 \(high confidence\)/);
+assert.match(clipboardMarkdown, /## Request path/);
 await cspContext.close();
 server.close();
 
@@ -345,6 +358,24 @@ assert.equal(
   "fallback field must hold the canonical share link",
 );
 assert.equal(await radarPage.evaluate(() => document.activeElement?.id), "link-field");
+await radarPage.keyboard.press("Escape");
+
+// The Markdown copy reuses the same designed fallback surface, relabelled so
+// it never misdescribes its contents, and the textarea must preserve the
+// report's line structure for pasting into tickets or AI chats.
+await radarPage.click("#copy-markdown");
+await radarPage.waitForSelector("#link-dialog[open]");
+assert.equal(await radarPage.textContent("#link-dialog-title"), "Copy this report as Markdown");
+assert.equal(await radarPage.textContent("#link-dialog-label"), "Markdown report");
+const markdown = await radarPage.inputValue("#link-field");
+assert.match(markdown, /^# RequestScope report: micros0ft\.example\n/);
+assert.match(markdown, /\*\*Verdict:\*\* HIGH · 66\/100/);
+assert.match(markdown, /## External reputation/);
+assert.match(markdown, /1\. HTTP 302 https:\/\/micros0ft\.example\/login -> https:\/\/micros0ft\.example\/signin \(41ms\)/);
+assert.match(markdown, /Full evidence: .*#abcdefghijklmnop$/m);
+const markdownLines = markdown.split("\n").length;
+assert.ok(markdownLines > 10, "the markdown brief must keep its line structure in the textarea field");
+await radarPage.keyboard.press("Escape");
 await radarContext.close();
 
 // "/" focuses the primary field from anywhere that is not text entry.

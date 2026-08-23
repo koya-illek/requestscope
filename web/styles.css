@@ -688,17 +688,20 @@ dialog h2 { margin: 0 0 30px; font-size: 32px; letter-spacing: -.04em; }
 }
 .primary-button:hover { background: var(--accent-2); }
 .dialog-field-label { display: block; margin-top: 20px; color: var(--muted); font: 500 10px/1.5 var(--mono); text-transform: uppercase; letter-spacing: .12em; }
-.dialog-field-label input {
+.dialog-field-label { display: block; margin-top: 20px; color: var(--muted); font: 500 10px/1.5 var(--mono); text-transform: uppercase; letter-spacing: .12em; }
+.dialog-field-label textarea {
   width: 100%;
+  min-height: 96px;
   margin-top: 6px;
   padding: 11px 12px;
   border: 1px solid var(--line-bright);
   outline: 0;
   background: #08110f;
   color: var(--text);
-  font: 400 12px/1.5 var(--mono);
+  font: 400 11px/1.55 var(--mono);
+  resize: vertical;
 }
-.dialog-field-label input:focus { border-color: var(--accent); }
+.dialog-field-label input:focus, .dialog-field-label textarea:focus { border-color: var(--accent); }
 .privacy-page { padding: 84px 0 110px; }
 .privacy-page h1 { max-width: 760px; margin: 18px 0 18px; }
 .privacy-panel { max-width: 900px; margin-top: 34px; padding: 28px 32px; }

@@ -117,6 +117,16 @@ test("consent-critical flows are designed dialogs, not blocking prompts", async 
   assert.ok(!/\bprompt\s*\(/.test(app), "app.js must not fall back to prompt()");
 });
 
+test("the evidence report copies as Markdown through a line-break-safe fallback", async () => {
+  const [html, app] = await Promise.all([read("index.html"), read("app.js")]);
+  assert.match(html, /id="copy-markdown"/, "the report actions must offer a Markdown copy");
+  assert.match(app, /function buildReportMarkdown/, "app.js must render the markdown brief from the stored report");
+  // The manual-copy field is a textarea because input assignment strips line
+  // breaks, which would silently corrupt a pasted markdown report.
+  const linkDialog = html.slice(html.indexOf('id="link-dialog"'));
+  assert.match(linkDialog, /<textarea id="link-field"[^>]*readonly>/, "the manual-copy field must preserve line breaks");
+});
+
 test("hash navigation only validates hashes that name no element on the page", async () => {
   const [app, html] = await Promise.all([read("app.js"), read("index.html")]);
   // The status pill and skip link change the hash to #status/#main-content;
