@@ -75,10 +75,12 @@ paths:
     get:
       operationId: getRequestScopeReport
       summary: Retrieve an unexpired trace report
+      description: Stored reports are immutable, so each response carries a strong ETag built from the report ID and conditional requests with If-None-Match answer 304 without a body. The daily retrieval quota is charged before the condition is evaluated.
       parameters:
         - { name: reportId, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{16}$' } }
       responses:
-        '200': { description: Stored trace report, content: { application/json: { schema: { $ref: '#/components/schemas/ScanReport' } } } }
+        '200': { description: Stored trace report, headers: { ETag: { schema: { type: string }, description: Strong validator, the quoted report ID } }, content: { application/json: { schema: { $ref: '#/components/schemas/ScanReport' } } } }
+        '304': { description: Not modified; the client copy is still current, headers: { ETag: { schema: { type: string } } } }
         '404': { description: Report not found or expired }
         '429': { description: Request limit reached }
     head:
@@ -93,10 +95,12 @@ paths:
     get:
       operationId: exportRequestScopeReport
       summary: Download an unexpired trace report as formatted JSON
+      description: Carries the same immutable-report ETag and If-None-Match behaviour as the report retrieval endpoint.
       parameters:
         - { name: reportId, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{16}$' } }
       responses:
         '200': { description: JSON report attachment, content: { application/json: { schema: { $ref: '#/components/schemas/ScanReport' } } } }
+        '304': { description: Not modified; the client copy is still current, headers: { ETag: { schema: { type: string } } } }
         '404': { description: Report not found or expired }
         '429': { description: Request limit reached }
     head:

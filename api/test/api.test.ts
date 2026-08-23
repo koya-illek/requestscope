@@ -171,6 +171,40 @@ describe("API routing and input boundary", () => {
     expect(prepare).toHaveBeenCalledTimes(2);
     expect(prepare.mock.calls[0][0]).toMatch(/^\s*INSERT INTO rate_limits/i);
     expect(prepare.mock.calls[1][0]).toMatch(/^\s*SELECT/i);
+    // Stored reports are immutable, so the report ID is published as a
+    // strong validator for conditional retrieval.
+    expect(response.headers.get("etag")).toBe('"abcdefghijklmnop"');
+  });
+
+  it("serves stored reports conditionally and keeps the quota charged on a hit", async () => {
+    const report = { id: "abcdefghijklmnop" };
+    const prepare = vi.fn((sql: string) => ({
+      bind: vi.fn(() => ({ first: vi.fn(async () => sql.trimStart().startsWith("SELECT") ? { report_json: JSON.stringify(report) } : undefined) })),
+    }));
+    const envWithDb = { ...env, DB: { prepare } as unknown as D1Database };
+    for (const header of ['"abcdefghijklmnop"', 'W/"abcdefghijklmnop"', '"stale-value", "abcdefghijklmnop"', "*"]) {
+      const response = await worker.fetch(new Request("https://api.example/api/scans/abcdefghijklmnop", {
+        headers: { "If-None-Match": header },
+      }), envWithDb, ctx);
+      expect(response.status, `If-None-Match: ${header}`).toBe(304);
+      expect(await response.text()).toBe("");
+      expect(response.headers.get("etag")).toBe('"abcdefghijklmnop"');
+      expect(response.headers.get("cache-control")).toBe("private, max-age=60");
+    }
+    // Every 304 still consumed quota and re-read D1: two prepare calls
+    // (rate-limit write, report select) per conditional request.
+    expect(prepare).toHaveBeenCalledTimes(8);
+    const miss = await worker.fetch(new Request("https://api.example/api/scans/abcdefghijklmnop", {
+      headers: { "If-None-Match": '"different-report-id"' },
+    }), envWithDb, ctx);
+    expect(miss.status).toBe(200);
+    expect(await miss.json()).toEqual(report);
+
+    const exportHit = await worker.fetch(new Request("https://api.example/api/scans/abcdefghijklmnop/export", {
+      headers: { "If-None-Match": '"abcdefghijklmnop"' },
+    }), envWithDb, ctx);
+    expect(exportHit.status).toBe(304);
+    expect(exportHit.headers.get("content-disposition")).toBeNull();
   });
 });
 

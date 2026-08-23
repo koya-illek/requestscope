@@ -129,10 +129,21 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): 
       await enforceScopedDailyRateLimit(request, env, "report", clampInt(env.REPORT_DAILY_LIMIT, 120, 1, 5000), "Daily report retrieval limit");
       const report = await loadReport(env.DB, match[1]);
       if (!report) return json({ error: "Report not found or expired" }, 404, cors);
+      // A stored report never changes, so its ID is a strong ETag. The quota
+      // above is still charged first: a 304 must not become a free
+      // existence oracle over the ID space.
+      const etag = `"${match[1]}"`;
+      if (ifNoneMatchSatisfied(request, etag)) {
+        return new Response(null, {
+          status: 304,
+          headers: { ...cors, ...securityHeaders(), ETag: etag, "Cache-Control": "private, max-age=60" },
+        });
+      }
       if (match[2]) {
         return new Response(JSON.stringify(report, null, 2), {
           headers: {
             ...cors,
+            ETag: etag,
             "Content-Type": "application/json; charset=utf-8",
             "Content-Disposition": `attachment; filename="requestscope-${report.id}.json"`,
             "Cache-Control": "private, max-age=60",
@@ -140,7 +151,7 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): 
           },
         });
       }
-      return json(report, 200, { ...cors, "Cache-Control": "private, max-age=60" });
+      return json(report, 200, { ...cors, ETag: etag, "Cache-Control": "private, max-age=60" });
     }
 
     return json({ error: "Not found" }, 404, cors);
@@ -404,6 +415,18 @@ async function enforceScopedDailyRateLimit(request: Request, env: Env, scope: st
 function bypassesScanRateLimit(ip: string, configured: string | undefined): boolean {
   if (!configured || ip === "local") return false;
   return configured.split(",").some((entry) => entry.trim() === ip);
+}
+
+/** RFC 9110 conditional request evaluation for the immutable stored report:
+ * clients may send a comma-separated list, echo it weakly validated, or use
+ * the wildcard form. */
+function ifNoneMatchSatisfied(request: Request, etag: string): boolean {
+  const header = request.headers.get("If-None-Match");
+  if (!header) return false;
+  return header.split(",").some((candidate) => {
+    const value = candidate.trim();
+    return value === "*" || value === etag || value === `W/${etag}`;
+  });
 }
 
 async function saveReport(db: D1Database, report: ScanReport): Promise<void> {
