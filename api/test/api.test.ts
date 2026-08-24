@@ -223,6 +223,56 @@ describe("API routing and input boundary", () => {
     expect(events.at(-1)).toMatchObject({ type: "error", status: 403 });
   });
 
+  it("logs a non-identifying completion line for fresh scans", async () => {
+    const dnsResponse = (url: URL) => Response.json({
+      Status: 0,
+      AD: true,
+      Answer: url.searchParams.get("type") === "A"
+        ? [{ name: `${url.searchParams.get("name") || "example.com"}.`, type: 1, TTL: 300, data: "93.184.216.34" }]
+        : [],
+    });
+    vi.stubGlobal("caches", {
+      open: vi.fn(async () => ({ match: vi.fn(async () => null), put: vi.fn(async () => {}) })),
+    });
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (url.hostname === "cloudflare-dns.com" || url.hostname === "dns.google") return dnsResponse(url);
+      return new Response("<html><body>ok</body></html>", {
+        status: 200,
+        headers: { "Content-Type": "text/html", "Cache-Control": "public, max-age=60" },
+      });
+    }));
+    const db = {
+      prepare: vi.fn((sql: string) => ({
+        bind: vi.fn(() => ({
+          first: vi.fn(async () => (sql.includes("rate_limits") ? { request_count: 1 } : undefined)),
+          run: vi.fn(async () => {}),
+        })),
+      })),
+    } as unknown as D1Database;
+    const logged: string[] = [];
+    const logSpy = vi.spyOn(console, "log").mockImplementation((...parts: unknown[]) => {
+      logged.push(parts.map((part) => String(part)).join(" "));
+    });
+
+    const response = await worker.fetch(new Request("https://api.example/api/scans/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com/observed-page" }),
+    }), { ...env, DB: db }, ctx);
+    expect(response.status).toBe(200);
+    const events = (await response.text()).trim().split("\n").map((line) => JSON.parse(line));
+    expect(events.at(-1)).toMatchObject({ type: "result", report: { status: "complete" } });
+
+    logSpy.mockRestore();
+    const completion = logged.find((line) => line.startsWith("scan_completed"));
+    expect(completion).toBeTruthy();
+    // The product promises that targets and hostnames never reach logs; the
+    // operational line must carry counters only.
+    expect(completion).not.toContain("example.com");
+    expect(completion).toMatch(/"status":"complete"/);
+  });
+
   it("does not write D1 for MCP handshake or discovery", async () => {
     const db = { prepare: vi.fn(() => { throw new Error("MCP handshake must not touch D1"); }) } as unknown as D1Database;
     const response = await worker.fetch(new Request("https://api.example/mcp/v2", {

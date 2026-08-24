@@ -328,6 +328,15 @@ async function createScan(
     },
   });
   await saveReport(env.DB, report);
+  // Free operational observability: one completion line with non-identifying
+  // counters only. Targets, hostnames, and client IPs never reach logs —
+  // that is part of the product's data promise, not an accident.
+  console.log("scan_completed", JSON.stringify({
+    status: report.status,
+    hops: report.http.hops.length,
+    durationMs: report.totalDurationMs,
+    coverage: report.coverage?.status ?? "unreported",
+  }));
   const cacheResponse = new Response(JSON.stringify(report), {
     headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${RECENT_SCAN_TTL}` },
   });
