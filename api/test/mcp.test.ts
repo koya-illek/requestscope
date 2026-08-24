@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleMcp } from "../src/mcp";
-import { RateLimitError } from "../src/security";
+import { RateLimitError, retryAfterSeconds } from "../src/security";
 import type { UrlRiskAssessment } from "../src/types";
 
 const assessment = {
@@ -104,7 +104,8 @@ describe("MCP Streamable HTTP endpoint", () => {
       beforeToolCall: async () => { throw new RateLimitError("Daily MCP request limit of 200 reached."); },
     });
     expect(response.status).toBe(429);
-    expect(response.headers.get("retry-after")).toBe("3600");
+    // Back-off runs until the UTC-daily MCP window rolls over.
+    expect(response.headers.get("retry-after")).toBe(String(retryAfterSeconds()));
     await expect(response.json()).resolves.toMatchObject({ error: { code: -32000, message: /Daily MCP request limit/ } });
   });
 

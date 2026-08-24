@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
+import { retryAfterSeconds } from "../src/security";
 import type { Env } from "../src/types";
 
 const env = {
@@ -216,7 +217,9 @@ describe("API routing and input boundary", () => {
 
     const second = await worker.fetch(streamRequest(), { ...env, DAILY_SCAN_LIMIT: "1", DB: db }, ctx);
     expect(second.status).toBe(429);
-    expect(second.headers.get("retry-after")).toBe("3600");
+    // The back-off hint points at the UTC-daily window rollover that metered
+    // the client, not an arbitrary fixed hour.
+    expect(second.headers.get("retry-after")).toBe(String(retryAfterSeconds()));
     await expect(second.json()).resolves.toEqual({ error: "Daily anonymous scan limit of 1 reached." });
     // One charge per stream request: the boundary metered it, so the
     // createScan call inside the stream must not meter again.

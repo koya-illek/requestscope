@@ -10,6 +10,13 @@ export class BlockedTargetError extends Error {
 
 export class RateLimitError extends Error {}
 
+/** The daily counters key on the UTC date, so a rejected client should retry
+ * when that window rolls over — not after an arbitrary constant hour. */
+export function retryAfterSeconds(now: Date = new Date()): number {
+  const nextWindow = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  return Math.max(1, Math.ceil((nextWindow - now.getTime()) / 1000) + 1);
+}
+
 export function normalizeUrl(input: unknown): URL {
   if (typeof input !== "string" || input.trim().length === 0 || input.length > 2048) {
     throw new InputError("Enter a URL of no more than 2,048 characters.");

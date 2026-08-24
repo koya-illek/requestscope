@@ -5,6 +5,7 @@ import {
   InputError,
   normalizeUrl,
   RateLimitError,
+  retryAfterSeconds,
 } from "./security";
 import type { Env, ReputationProviderName, ScanReport } from "./types";
 import { handleMcp } from "./mcp";
@@ -581,7 +582,9 @@ function errorResponse(error: unknown, cors: Record<string, string>): Response {
   const normalized = normalizeError(error);
   return json({ error: normalized.message }, normalized.status, {
     ...cors,
-    ...(normalized.status === 429 ? { "Retry-After": "3600" } : {}),
+    // The daily windows reset at UTC midnight, so the back-off hint points at
+    // that rollover instead of an arbitrary fixed hour.
+    ...(normalized.status === 429 ? { "Retry-After": String(retryAfterSeconds()) } : {}),
   });
 }
 

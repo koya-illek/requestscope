@@ -1,6 +1,6 @@
 import type { ScanReport, UrlRiskAssessment } from "./types";
 import type { UrlRiskContext } from "./url-risk";
-import { BlockedTargetError, InputError, RateLimitError } from "./security";
+import { BlockedTargetError, InputError, RateLimitError, retryAfterSeconds } from "./security";
 import { MCP_SERVER_VERSION } from "./version";
 
 const MCP_PROTOCOL_VERSION = "2025-11-25";
@@ -83,9 +83,10 @@ export async function handleMcp(
       try {
         return await callTool(requestId, message.params, execute, options);
       } catch (error) {
-        // Quota failures must stay transport-visible so clients can back off.
+        // Quota failures must stay transport-visible so clients can back off
+        // until the UTC-daily window that metered them rolls over.
         if (error instanceof RateLimitError) {
-          return rpcError(requestId, -32000, error.message, 429, { ...cors, "Retry-After": "3600" });
+          return rpcError(requestId, -32000, error.message, 429, { ...cors, "Retry-After": String(retryAfterSeconds()) });
         }
         throw error;
       }

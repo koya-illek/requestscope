@@ -7,6 +7,7 @@ import {
   redactHeaderForStorage,
   redactTextForStorage,
   redactUrlForStorage,
+  retryAfterSeconds,
   safeRedirect,
 } from "../src/security";
 
@@ -119,5 +120,16 @@ describe("safeRedirect", () => {
 
   it("reapplies port and protocol restrictions", () => {
     expect(() => safeRedirect(new URL("https://example.com"), "http://example.net:8080")).toThrow(InputError);
+  });
+});
+
+describe("retryAfterSeconds", () => {
+  it("counts down to the UTC-daily window rollover", () => {
+    expect(retryAfterSeconds(new Date("2026-08-23T23:59:59Z"))).toBe(2);
+    expect(retryAfterSeconds(new Date("2026-08-23T12:00:00Z"))).toBe(43201);
+    // A client rejected exactly at the rollover gets the full fresh window.
+    expect(retryAfterSeconds(new Date("2026-08-23T00:00:00Z"))).toBe(86401);
+    // Never zero, even in the last millisecond of a window.
+    expect(retryAfterSeconds(new Date("2026-08-23T23:59:59.999Z"))).toBe(2);
   });
 });
