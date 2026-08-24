@@ -32,9 +32,19 @@
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
+    // Whitespace-only values pass native :required, so they need explicit
+    // feedback rather than a silent no-op submit.
+    if (!input.value.trim()) {
+      input.setCustomValidity("Enter a public URL to trace.");
+      input.reportValidity();
+      return;
+    }
     runTrace(input.value);
   });
-  input.addEventListener("input", updateQueryWarning);
+  input.addEventListener("input", () => {
+    input.setCustomValidity("");
+    updateQueryWarning();
+  });
   [mapDepsCheckbox, externalReputationCheckbox].forEach((control) =>
     control?.addEventListener("change", updateAdvancedOptionState)
   );

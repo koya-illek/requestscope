@@ -396,6 +396,28 @@ await shortcutPage.check("#map-deps");
 await shortcutPage.locator("#map-deps").focus();
 await shortcutPage.keyboard.press("/");
 assert.equal(await shortcutPage.evaluate(() => document.activeElement?.id), "map-deps", "text entry and focused controls must win over the shortcut");
+
+// Whitespace-only input passes native :required, so it must get explicit
+// validation feedback instead of a silent no-op submission.
+let whitespaceSubmissions = 0;
+await shortcutPage.route("**/api/scans/stream", async (route) => {
+  whitespaceSubmissions += 1;
+  await route.fulfill({ status: 200, contentType: "application/x-ndjson", body: "" });
+});
+await shortcutPage.fill("#url-input", "   ");
+await shortcutPage.click("#trace-button");
+assert.equal(whitespaceSubmissions, 0, "a whitespace-only submit must not reach the API");
+assert.equal(
+  await shortcutPage.evaluate(() => document.querySelector("#url-input")?.validity.customError),
+  true,
+  "the URL field must carry designed validation feedback",
+);
+await shortcutPage.fill("#url-input", "example.com");
+assert.equal(
+  await shortcutPage.evaluate(() => document.querySelector("#url-input")?.validity.customError),
+  false,
+  "typing again must clear the custom validation state",
+);
 await shortcutContext.close();
 
 // Phase 5: the cancel path. A trace that stops delivering events must stay
