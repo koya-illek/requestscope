@@ -366,6 +366,17 @@ describe("rate-limited public access", () => {
     expect(response.headers.get("access-control-allow-origin")).toBe("https://requestscope.illek.ie");
     await expect(response.json()).resolves.toMatchObject({ protection: "rate-limit", sourceRevision: "uncommitted-source", databaseSchemaVersion: 1 });
   });
+
+  it("exposes operational headers to cross-origin browser clients", async () => {
+    const response = await worker.fetch(new Request("https://api.example/api/health", {
+      headers: { Origin: "https://requestscope.illek.ie" },
+    }), env, ctx);
+    // Without Expose-Headers a cross-origin fetch cannot read the ETag,
+    // creation Location, Retry-After, or export disposition at all, so
+    // browser-based integrators could never implement conditional GETs or
+    // honour the back-off hint.
+    expect(response.headers.get("access-control-expose-headers")).toBe("ETag, Location, Retry-After, Content-Disposition");
+  });
 });
 
 describe("scheduled retention cleanup", () => {

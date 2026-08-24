@@ -550,6 +550,11 @@ function corsHeaders(origin: string | null): Record<string, string> {
     ...(origin ? { "Access-Control-Allow-Origin": origin, Vary: "Origin" } : {}),
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, MCP-Protocol-Version, MCP-Session-Id",
+    // Browser integrations can only read these operational headers from a
+    // cross-origin fetch when they are explicitly exposed: the conditional-
+    // GET validator, the creation Location, the 429 back-off hint, and the
+    // export attachment disposition.
+    "Access-Control-Expose-Headers": "ETag, Location, Retry-After, Content-Disposition",
     "Access-Control-Max-Age": "86400",
   };
 }

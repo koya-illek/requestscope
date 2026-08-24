@@ -2,7 +2,10 @@ openapi: 3.0.3
 info:
   title: RequestScope URL Risk API
   version: 1.5.0
-  description: Evidence-backed URL tracing and phishing-risk assessment for Copilot and automation.
+  description: |
+    Evidence-backed URL tracing and phishing-risk assessment for Copilot and automation.
+
+    Request bodies are strict: fields outside the published schemas are rejected with 400 naming the field, matching the additionalProperties declarations here. Known endpoints answer unsupported methods with 405 and an Allow header. Cross-origin browser clients can read ETag, Location, Retry-After, and Content-Disposition because they are listed in Access-Control-Expose-Headers.
 servers:
   - url: https://requestscope.illek.ie
 security:
@@ -85,14 +88,15 @@ paths:
         '304': { description: Not modified; the client copy is still current, headers: { ETag: { schema: { type: string } } } }
         '404': { description: Report not found or expired }
         '429': { description: Request limit reached }
-    head:
-      operationId: probeRequestScopeReport
-      summary: Report-availability probe without a response body
-      parameters:
-        - { name: reportId, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{16}$' } }
-      responses:
-        '200': { description: The GET headers with an empty body }
-        '404': { description: Report not found or expired }
+      head:
+        operationId: probeRequestScopeReport
+        summary: Report-availability probe without a response body
+        parameters:
+          - { name: reportId, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{16}$' } }
+        responses:
+          '200': { description: The GET headers with an empty body }
+          '404': { description: Report not found or expired }
+          '429': { description: Retrieval quota reached; the probe still consumes quota before existence is checked }
   /api/scans/{reportId}/export:
     get:
       operationId: exportRequestScopeReport
@@ -105,14 +109,15 @@ paths:
         '304': { description: Not modified; the client copy is still current, headers: { ETag: { schema: { type: string } } } }
         '404': { description: Report not found or expired }
         '429': { description: Request limit reached }
-    head:
-      operationId: probeRequestScopeExport
-      summary: Export-availability probe without a response body
-      parameters:
-        - { name: reportId, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{16}$' } }
-      responses:
-        '200': { description: The GET headers with an empty body, including Content-Disposition attachment }
-        '404': { description: Report not found or expired }
+      head:
+        operationId: probeRequestScopeExport
+        summary: Export-availability probe without a response body
+        parameters:
+          - { name: reportId, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{16}$' } }
+        responses:
+          '200': { description: The GET headers with an empty body, including Content-Disposition attachment }
+          '404': { description: Report not found or expired }
+          '429': { description: Retrieval quota reached; the probe still consumes quota before existence is checked }
   /api/v1/url-risk:
     post:
       operationId: assessUrlRisk
