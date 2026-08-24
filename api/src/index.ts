@@ -204,8 +204,18 @@ async function authorizedRiskRequest(request: Request, env: Env): Promise<boolea
   return difference === 0;
 }
 
+/** The published OpenAPI schemas declare additionalProperties: false; the
+ * boundary enforces that instead of silently dropping a misspelled field,
+ * because a silently ignored "externalreputation" would run a trace whose
+ * consented lookups never happened. */
+function rejectUnknownFields(body: Record<string, unknown>, allowed: string[]): void {
+  const unknown = Object.keys(body).find((name) => !allowed.includes(name));
+  if (unknown) throw new InputError(`Unsupported request field: ${unknown}.`);
+}
+
 async function readScanInput(request: Request): Promise<ScanInput> {
   const body = await readJsonObject(request);
+  rejectUnknownFields(body, ["url", "mapDependencies", "externalReputation", "claimedOrganisation", "messageContext"]);
   if (typeof body.url !== "string") throw new InputError("A URL is required.");
   if (body.mapDependencies !== undefined && typeof body.mapDependencies !== "boolean") {
     throw new InputError("mapDependencies must be a boolean.");
@@ -224,6 +234,7 @@ async function readScanInput(request: Request): Promise<ScanInput> {
 
 async function readRiskInput(request: Request): Promise<RiskInput> {
   const body = await readJsonObject(request);
+  rejectUnknownFields(body, ["url", "externalReputation", "claimedOrganisation", "messageContext"]);
   if (typeof body.url !== "string") throw new InputError("A URL is required.");
   if (body.externalReputation !== undefined && typeof body.externalReputation !== "boolean") {
     throw new InputError("externalReputation must be a boolean.");

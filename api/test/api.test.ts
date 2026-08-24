@@ -127,6 +127,31 @@ describe("API routing and input boundary", () => {
     await expect(response.json()).resolves.toEqual({ error: "externalReputation must be a boolean." });
   });
 
+  it("rejects unknown scan fields instead of silently ignoring them", async () => {
+    // A silently ignored "externalreputation" would return a trace whose
+    // consented lookups never ran; the published schema says such a field is
+    // a client bug, so the boundary names it.
+    const db = { prepare: vi.fn(() => { throw new Error("quota must not be charged for a malformed body"); }) } as unknown as D1Database;
+    const response = await worker.fetch(new Request("https://api.example/api/scans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com", externalreputation: true }),
+    }), { ...env, DB: db }, ctx);
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Unsupported request field: externalreputation." });
+    expect(db.prepare).not.toHaveBeenCalled();
+  });
+
+  it("rejects unknown url-risk fields at the same strictness as MCP arguments", async () => {
+    const response = await worker.fetch(new Request("https://api.example/api/v1/url-risk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com", mapDependencies: true }),
+    }), env, ctx);
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Unsupported request field: mapDependencies." });
+  });
+
   it("protects the Copilot endpoint when an API credential is configured", async () => {
     const response = await worker.fetch(new Request("https://api.example/api/v1/url-risk", {
       method: "POST",
