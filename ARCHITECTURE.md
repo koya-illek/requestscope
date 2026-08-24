@@ -66,7 +66,7 @@ flowchart LR
 | URL risk engine | Evaluates structure, brand similarity, typo and lookalike indicators, shorteners, message context, and phishing language | `api/src/url-risk.ts` |
 | Reputation adapters | Calls consented external reputation providers and caches provider results | `api/src/reputation.ts` |
 | Takeover evidence | Performs bounded DNS and provider-signature checks for discovered names | `api/src/takeover.ts` |
-| MCP adapter | Publishes three typed tools over stateless Streamable HTTP | `api/src/mcp.ts` |
+| MCP adapter | Publishes three typed tools over stateless Streamable HTTP, with optional progress notifications for callers that supply a progressToken | `api/src/mcp.ts` |
 | Browser application | Submits scans, renders trace phases and evidence, handles consent, and displays reports | `web/app.js`, `web/index.html` |
 
 ## Trace and assessment flow

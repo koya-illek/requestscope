@@ -132,7 +132,7 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): 
     if (url.pathname === "/mcp" || url.pathname === "/mcp/v2") {
       if (request.headers.get("Origin") && !origin) return json({ error: "Origin not allowed" }, 403, cors);
       if (!await authorizedRiskRequest(request, env)) return json({ error: "Invalid API credential" }, 401, cors);
-      return handleMcp(request, async (tool, args) => {
+      return handleMcp(request, async (tool, args, onProgress) => {
         if (tool === "get_requestscope_report") {
           const reportId = String(args.reportId || "");
           if (!REPORT_ID.test(reportId)) throw new InputError("A valid 16-character report ID is required.");
@@ -147,7 +147,9 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): 
           messageContext: args.messageContext as string | undefined,
           externalReputation: args.externalReputation === true,
         };
-        const report = await createScan(request, input, env, ctx, () => {}, { chargeAnonymousScanQuota: false });
+        // Analyzer stage events double as MCP progress notifications for
+        // clients that asked for a progressToken.
+        const report = await createScan(request, input, env, ctx, (event) => onProgress({ message: event.message }), { chargeAnonymousScanQuota: false });
         return tool === "assess_url_risk" ? report.urlRisk! : report;
       }, {
         beforeToolCall: async () => enforceScopedDailyRateLimit(request, env, "mcp", clampInt(env.MCP_DAILY_LIMIT, 200, 1, 5000), "Daily MCP request limit"),

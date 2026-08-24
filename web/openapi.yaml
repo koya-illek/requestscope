@@ -152,7 +152,7 @@ paths:
     post:
       operationId: invokeRequestScopeMcp
       summary: Invoke the RequestScope Streamable HTTP MCP endpoint
-      description: JSON-RPC MCP endpoint for trace_request, assess_url_risk, and get_requestscope_report. Handshake and discovery are read-only. Tool calls are bounded and may require a bearer credential when COPILOT_API_KEY is configured.
+      description: JSON-RPC MCP endpoint for trace_request, assess_url_risk, and get_requestscope_report. Handshake and discovery are read-only. Tool calls are bounded and may require a bearer credential when COPILOT_API_KEY is configured. A tool call that carries params._meta.progressToken and accepts text/event-stream receives notifications/progress events while the trace runs, followed by the ordinary JSON-RPC response as the final message event; without a progressToken the response is a single JSON document.
       security:
         - {}
         - bearerAuth: []
@@ -162,7 +162,11 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/McpRequest' }
       responses:
-        '200': { description: JSON-RPC result or error, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        '200':
+          description: JSON-RPC result or error. Single document by default; an event stream of progress notifications ending with the response when the call supplied a progressToken.
+          content:
+            application/json: { schema: { type: object, additionalProperties: true } }
+            text/event-stream: { schema: { type: string, description: 'message events; each data payload is a JSON-RPC notification or response' } }
         '202': { description: JSON-RPC notification accepted }
         '400': { description: Invalid JSON-RPC request }
         '401': { description: Invalid API credential when bearer authentication is configured }

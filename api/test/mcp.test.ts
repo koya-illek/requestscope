@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleMcp } from "../src/mcp";
-import { RateLimitError, retryAfterSeconds } from "../src/security";
+import { BlockedTargetError, RateLimitError, retryAfterSeconds } from "../src/security";
 import type { UrlRiskAssessment } from "../src/types";
 
 const assessment = {
@@ -57,7 +57,7 @@ describe("MCP Streamable HTTP endpoint", () => {
     const execute = vi.fn(async () => assessment);
     const response = await handleMcp(request("tools/call", { name: "assess_url_risk", arguments: { url: "https://example.com", claimedOrganisation: "Example" } }), execute);
     const body = await response.json<{ result: { structuredContent: UrlRiskAssessment } }>();
-    expect(execute).toHaveBeenCalledWith("assess_url_risk", { url: "https://example.com", claimedOrganisation: "Example" });
+    expect(execute).toHaveBeenCalledWith("assess_url_risk", { url: "https://example.com", claimedOrganisation: "Example" }, expect.any(Function));
     expect(body.result.structuredContent.verdict).toBe("low");
   });
 
@@ -162,5 +162,109 @@ describe("MCP Streamable HTTP endpoint", () => {
       corsHeaders: { "Access-Control-Allow-Origin": "https://app.example" },
     });
     expect(response.headers.get("access-control-allow-origin")).toBe("https://app.example");
+  });
+
+  it("streams notifications/progress before the result when the caller supplies a progressToken", async () => {
+    for (const progressToken of ["tok-7", 42]) {
+      const execute = vi.fn(async (_name, _args, onProgress) => {
+        onProgress({ message: "Resolved DNS" });
+        onProgress({ message: "Following redirects" });
+        return assessment;
+      });
+      const response = await handleMcp(new Request("https://api.example/mcp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "trace_request", arguments: { url: "https://example.com" }, _meta: { progressToken } },
+        }),
+      }), execute);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toContain("text/event-stream");
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      const frames = (await response.text()).split("\n\n").filter(Boolean).map((frame) => {
+        const lines = frame.split("\n");
+        return {
+          event: lines.find((line) => line.startsWith("event: "))?.slice(7),
+          data: JSON.parse(lines.find((line) => line.startsWith("data: "))!.slice(6)),
+        };
+      });
+      // Progress notifications carry the caller's token verbatim, count up,
+      // and never borrow the request id.
+      const notifications = frames.filter((frame) => frame.data.method === "notifications/progress");
+      expect(notifications.map((frame) => frame.data.params)).toEqual([
+        { progressToken, progress: 1, message: "Resolved DNS" },
+        { progressToken, progress: 2, message: "Following redirects" },
+      ]);
+      const final = frames.at(-1)!.data;
+      expect(final).toMatchObject({ jsonrpc: "2.0", id: 1, result: { isError: false } });
+    }
+  });
+
+  it("keeps a single JSON response when a progressToken arrives without an SSE-capable Accept", async () => {
+    const response = await handleMcp(new Request("https://api.example/mcp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 9,
+        method: "tools/call",
+        params: { name: "assess_url_risk", arguments: { url: "https://example.com" }, _meta: { progressToken: "tok-7" } },
+      }),
+    }), async () => assessment);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    await expect(response.json()).resolves.toMatchObject({ id: 9, result: { isError: false } });
+  });
+
+  it("delivers tool failures as the final SSE message instead of breaking the stream", async () => {
+    const response = await handleMcp(new Request("https://api.example/mcp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "req-3",
+        method: "tools/call",
+        params: { name: "assess_url_risk", arguments: { url: "https://example.com" }, _meta: { progressToken: "tok-7" } },
+      }),
+    }), async () => {
+      throw new BlockedTargetError("The hostname resolves to a private or reserved network address.");
+    });
+    const frames = (await response.text()).split("\n\n").filter(Boolean)
+      .map((frame) => JSON.parse(frame.split("\n").find((line) => line.startsWith("data: "))!.slice(6)));
+    const final = frames.at(-1)!;
+    expect(final).toMatchObject({ id: "req-3", result: { isError: true } });
+    expect(final.result.content[0].text).toContain("private or reserved network address");
+  });
+
+  it("answers invalid arguments and exhausted quota as plain JSON before any SSE byte", async () => {
+    const invalid = await handleMcp(new Request("https://api.example/mcp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 5,
+        method: "tools/call",
+        params: { name: "assess_url_risk", arguments: { url: "https://example.com", externalReputation: "yes" }, _meta: { progressToken: "tok-7" } },
+      }),
+    }), async () => assessment);
+    expect(invalid.headers.get("content-type")).toContain("application/json");
+    await expect(invalid.json()).resolves.toMatchObject({ error: { code: -32602, message: "externalReputation must be a boolean" } });
+
+    const limited = await handleMcp(new Request("https://api.example/mcp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 6,
+        method: "tools/call",
+        params: { name: "assess_url_risk", arguments: { url: "https://example.com" }, _meta: { progressToken: "tok-7" } },
+      }),
+    }), async () => assessment, {
+      beforeToolCall: async () => { throw new RateLimitError("Daily MCP request limit of 200 reached."); },
+    });
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe(String(retryAfterSeconds()));
   });
 });

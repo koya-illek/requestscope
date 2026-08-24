@@ -155,6 +155,12 @@ Both URLs expose `trace_request`, `assess_url_risk`, and
 engine as the REST endpoint. `/mcp/v2` is a versioned RequestScope alias; the
 negotiated MCP protocol version is `2025-11-25`.
 
+Tool calls that carry `params._meta.progressToken` (and accept
+`text/event-stream`) receive `notifications/progress` events while the trace
+runs, followed by the ordinary JSON-RPC response as the final message event —
+the Streamable HTTP pattern for a trace that can take tens of seconds. Calls
+without a progressToken keep the single-response JSON behaviour.
+
 - Copilot Studio: import [`web/mcp-copilot.yaml`](web/mcp-copilot.yaml), or enter the
   `/mcp` URL through its MCP onboarding wizard.
 - OpenAI Responses API: configure a remote MCP tool with `server_url` set to

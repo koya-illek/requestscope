@@ -25,6 +25,18 @@ export interface McpRiskInput extends UrlRiskContext {
   url: string;
 }
 
+/** Progress events are transport details of the executing scan; the handler
+ * only needs a human-readable message to place in notifications/progress. */
+export interface McpProgressEvent {
+  message: string;
+}
+
+export type McpExecute = (
+  name: string,
+  input: Record<string, unknown>,
+  onProgress: (event: McpProgressEvent) => void,
+) => Promise<ScanReport | UrlRiskAssessment>;
+
 export interface McpHandlerOptions {
   beforeToolCall?: () => Promise<void>;
   corsHeaders?: Record<string, string>;
@@ -40,7 +52,7 @@ class McpRequestShapeError extends Error {
 
 export async function handleMcp(
   request: Request,
-  execute: (name: string, input: Record<string, unknown>) => Promise<ScanReport | UrlRiskAssessment>,
+  execute: McpExecute,
   options: McpHandlerOptions = {},
 ): Promise<Response> {
   const cors = options.corsHeaders || {};
@@ -81,6 +93,10 @@ export async function handleMcp(
       return rpcResult(requestId, { tools: [traceTool(), riskTool(), reportTool()] }, cors);
     case "tools/call":
       try {
+        const progressToken = progressTokenOf(message.params);
+        if (progressToken !== null && acceptsEventStream(request)) {
+          return await streamedToolCall(request, requestId, message.params, progressToken, execute, options, cors);
+        }
         return await callTool(requestId, message.params, execute, options);
       } catch (error) {
         // Quota failures must stay transport-visible so clients can back off
@@ -102,49 +118,150 @@ function requestIdOf(message: McpRequest): string | number | null {
   return typeof message.id === "string" || typeof message.id === "number" ? message.id : null;
 }
 
-async function callTool(id: string | number | null, params: unknown, execute: (name: string, input: Record<string, unknown>) => Promise<ScanReport | UrlRiskAssessment>, options: McpHandlerOptions): Promise<Response> {
+/** params._meta.progressToken (string or number) requests progress
+ * notifications for this call; anything else means "don't". */
+function progressTokenOf(params: unknown): string | number | null {
+  if (!params || typeof params !== "object") return null;
+  const meta = (params as Record<string, unknown>)._meta;
+  if (!meta || typeof meta !== "object") return null;
+  const token = (meta as Record<string, unknown>).progressToken;
+  return typeof token === "string" || typeof token === "number" ? token : null;
+}
+
+function acceptsEventStream(request: Request): boolean {
+  return (request.headers.get("Accept") || "").toLowerCase().includes("text/event-stream");
+}
+
+interface ParsedToolCall {
+  name: string;
+  args: Record<string, unknown>;
+}
+
+function parsedToolCall(params: unknown): ParsedToolCall {
   const value = params && typeof params === "object" ? params as Record<string, unknown> : {};
-  if (!["trace_request", "assess_url_risk", "get_requestscope_report"].includes(String(value.name))) return rpcError(id, -32602, "Unknown tool name");
   const args = value.arguments && typeof value.arguments === "object" ? value.arguments as Record<string, unknown> : {};
-  const allowedArguments = value.name === "trace_request"
+  return { name: String(value.name), args };
+}
+
+/** Argument validation for every transport; the returned error is the
+ * JSON-RPC -32602 payload, or null when the call may proceed. */
+function toolRequestError(params: unknown): { code: number; message: string } | null {
+  const { name, args } = parsedToolCall(params);
+  if (!["trace_request", "assess_url_risk", "get_requestscope_report"].includes(name)) return { code: -32602, message: "Unknown tool name" };
+  const allowedArguments = name === "trace_request"
     ? ["url", "mapDependencies", "claimedOrganisation", "messageContext", "externalReputation"]
-    : value.name === "assess_url_risk"
+    : name === "assess_url_risk"
       ? ["url", "claimedOrganisation", "messageContext", "externalReputation"]
       : ["reportId"];
-  const unknownArgument = Object.keys(args).find((name) => !allowedArguments.includes(name));
-  if (unknownArgument) return rpcError(id, -32602, `Unsupported argument: ${unknownArgument}`);
-  if (value.name === "get_requestscope_report") {
-    if (typeof args.reportId !== "string") return rpcError(id, -32602, "get_requestscope_report requires reportId");
-    if (!/^[A-Za-z0-9_-]{16}$/.test(args.reportId)) return rpcError(id, -32602, "reportId must be a valid 16-character report ID");
-  } else if (typeof args.url !== "string") return rpcError(id, -32602, `${String(value.name)} requires a URL`);
-  if (args.claimedOrganisation !== undefined && typeof args.claimedOrganisation !== "string") return rpcError(id, -32602, "claimedOrganisation must be a string");
-  if (args.messageContext !== undefined && typeof args.messageContext !== "string") return rpcError(id, -32602, "messageContext must be a string");
-  if (typeof args.claimedOrganisation === "string" && args.claimedOrganisation.length > 120) return rpcError(id, -32602, "claimedOrganisation is too long");
-  if (typeof args.messageContext === "string" && args.messageContext.length > 1000) return rpcError(id, -32602, "messageContext is too long");
-  if (args.mapDependencies !== undefined && typeof args.mapDependencies !== "boolean") return rpcError(id, -32602, "mapDependencies must be a boolean");
-  if (args.externalReputation !== undefined && typeof args.externalReputation !== "boolean") return rpcError(id, -32602, "externalReputation must be a boolean");
+  const unknownArgument = Object.keys(args).find((argument) => !allowedArguments.includes(argument));
+  if (unknownArgument) return { code: -32602, message: `Unsupported argument: ${unknownArgument}` };
+  if (name === "get_requestscope_report") {
+    if (typeof args.reportId !== "string") return { code: -32602, message: "get_requestscope_report requires reportId" };
+    if (!/^[A-Za-z0-9_-]{16}$/.test(args.reportId)) return { code: -32602, message: "reportId must be a valid 16-character report ID" };
+  } else if (typeof args.url !== "string") return { code: -32602, message: `${name} requires a URL` };
+  if (args.claimedOrganisation !== undefined && typeof args.claimedOrganisation !== "string") return { code: -32602, message: "claimedOrganisation must be a string" };
+  if (args.messageContext !== undefined && typeof args.messageContext !== "string") return { code: -32602, message: "messageContext must be a string" };
+  if (typeof args.claimedOrganisation === "string" && args.claimedOrganisation.length > 120) return { code: -32602, message: "claimedOrganisation is too long" };
+  if (typeof args.messageContext === "string" && args.messageContext.length > 1000) return { code: -32602, message: "messageContext is too long" };
+  if (args.mapDependencies !== undefined && typeof args.mapDependencies !== "boolean") return { code: -32602, message: "mapDependencies must be a boolean" };
+  if (args.externalReputation !== undefined && typeof args.externalReputation !== "boolean") return { code: -32602, message: "externalReputation must be a boolean" };
+  return null;
+}
 
+/** The single execution path shared by the JSON and SSE transports. Tool
+ * failures become isError results per the MCP spec: expected input/target
+ * errors keep their helpful message, anything else is logged server-side and
+ * masked so internal details never reach model-visible output. */
+async function runTool(
+  name: string,
+  args: Record<string, unknown>,
+  execute: McpExecute,
+  onProgress: (event: McpProgressEvent) => void,
+): Promise<Record<string, unknown>> {
+  try {
+    const assessment = await execute(name, args, onProgress);
+    return { content: [{ type: "text", text: JSON.stringify(assessment) }], structuredContent: assessment, isError: false };
+  } catch (error) {
+    if (error instanceof InputError || error instanceof BlockedTargetError) {
+      return { content: [{ type: "text", text: error.message }], isError: true };
+    }
+    console.error("mcp_tool_failed", error);
+    return { content: [{ type: "text", text: "The URL assessment could not be completed. Please try again." }], isError: true };
+  }
+}
+
+async function callTool(id: string | number | null, params: unknown, execute: McpExecute, options: McpHandlerOptions): Promise<Response> {
+  const invalid = toolRequestError(params);
+  if (invalid) return rpcError(id, invalid.code, invalid.message);
+  const { name, args } = parsedToolCall(params);
   // Quota enforcement runs before the guarded execution so RateLimitError
   // propagates to handleMcp and becomes an HTTP 429 JSON-RPC error.
   await options.beforeToolCall?.();
-  try {
-    const assessment = await execute(String(value.name), args);
-    return rpcResult(id, {
-      content: [{ type: "text", text: JSON.stringify(assessment) }],
-      structuredContent: assessment,
-      isError: false,
-    });
-  } catch (error) {
-    // Tool-execution failures are reported as isError results per the MCP
-    // spec. Expected input/target errors keep their helpful message; anything
-    // else is logged server-side and masked so internal details never reach
-    // model-visible output.
-    if (error instanceof InputError || error instanceof BlockedTargetError) {
-      return rpcResult(id, { content: [{ type: "text", text: error.message }], isError: true });
-    }
-    console.error("mcp_tool_failed", error);
-    return rpcResult(id, { content: [{ type: "text", text: "The URL assessment could not be completed. Please try again." }], isError: true });
-  }
+  return rpcResult(id, await runTool(name, args, execute, () => {}));
+}
+
+/** A caller that supplied params._meta.progressToken and accepts SSE receives
+ * notifications/progress while its trace runs, then the ordinary JSON-RPC
+ * response as the final message event — the Streamable HTTP pattern for work
+ * that takes tens of seconds. Validation failures and quota exhaustion still
+ * answer as plain JSON because nothing has been streamed yet. */
+async function streamedToolCall(
+  request: Request,
+  id: string | number | null,
+  params: unknown,
+  progressToken: string | number,
+  execute: McpExecute,
+  options: McpHandlerOptions,
+  cors: Record<string, string>,
+): Promise<Response> {
+  const invalid = toolRequestError(params);
+  if (invalid) return rpcError(id, invalid.code, invalid.message);
+  await options.beforeToolCall?.();
+  const { name, args } = parsedToolCall(params);
+  const encoder = new TextEncoder();
+  // A client disconnect makes enqueue reject; the flag turns later sends and
+  // the close into no-ops. The scan keeps running so the report is still
+  // persisted for its share link, exactly like the NDJSON stream endpoint.
+  let closed = false;
+  request.signal?.addEventListener("abort", () => { closed = true; }, { once: true });
+  let progress = 0;
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (payload: unknown) => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`event: message\ndata: ${JSON.stringify(payload)}\n\n`));
+        } catch {
+          closed = true;
+        }
+      };
+      const onProgress = (event: McpProgressEvent) => {
+        progress += 1;
+        send({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken, progress, message: event.message } });
+      };
+      send({ jsonrpc: "2.0", id, result: await runTool(name, args, execute, onProgress) });
+      if (!closed) {
+        try {
+          controller.close();
+        } catch {
+          closed = true;
+        }
+      }
+    },
+    cancel() {
+      closed = true;
+    },
+  });
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      ...cors,
+      ...MCP_SECURITY_HEADERS,
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-store",
+      "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+    },
+  });
 }
 
 function traceTool() {

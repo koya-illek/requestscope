@@ -66,7 +66,15 @@ test("public shell exposes metadata, keyboard navigation and privacy", async () 
   assert.ok(openapi.includes("cloudflare_family_dns"));
   assert.ok(openapi.includes("/mcp/v2:"));
   assert.ok(openapi.includes("ScanCoverage"));
-  assert.ok(!openapi.includes("text/event-stream"));
+  // Tool calls that supply params._meta.progressToken receive MCP progress
+  // notifications over an SSE stream; the contract must document both
+  // response shapes for the /mcp/v2 endpoint.
+  const mcpSection = openapi.slice(openapi.indexOf("/mcp/v2:"), openapi.indexOf("components:"));
+  for (const marker of ["notifications/progress", "text/event-stream", "progressToken"]) {
+    assert.ok(mcpSection.includes(marker), `the /mcp/v2 contract must document ${marker}`);
+  }
+  // The Copilot connector import surface stays single-response JSON.
+  assert.ok(!mcpConnector.includes("text/event-stream"));
   // Read endpoints answer HEAD probes with the GET headers and no body; the
   // published contract documents the probe operations.
   for (const probe of ["probeRequestScopeApi", "probeRequestScopeHealth", "probeRequestScopeReport", "probeRequestScopeExport"]) {
@@ -74,7 +82,6 @@ test("public shell exposes metadata, keyboard navigation and privacy", async () 
   }
   assert.ok(mcpConnector.includes("version: 2.2.0"));
   assert.ok(mcpConnector.includes("trace_request, assess_url_risk, and get_requestscope_report"));
-  assert.ok(!mcpConnector.includes("text/event-stream"));
   assert.ok(favicon.includes("RequestScope"));
   assert.ok(appleIcon.includes("RequestScope"));
   assert.ok(privacy.includes("Cloudflare's malware-filtering DNS"));
