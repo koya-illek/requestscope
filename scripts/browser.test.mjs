@@ -29,6 +29,15 @@ const report = {
     finalStatus: 200, contentType: "text/html", contentBytesInspected: 1200, truncated: false,
   },
   pageSecuritySignals: { passwordForm: true, forms: 1, externalFormAction: false, matchedLanguage: ["login"] },
+  coverage: {
+    status: "partial",
+    budget: {},
+    phases: {
+      core: { status: "complete", attempted: 4, successful: 4, failed: 0, skipped: 0, bytesInspected: 1200, truncated: false, durationMs: 143 },
+      dependencies: { status: "unavailable", attempted: 0, successful: 0, failed: 0, skipped: 0, bytesInspected: 0, truncated: false, durationMs: 0, detail: "dependencies: requested but the trace had no inspectable final response." },
+      reputation: { status: "skipped", attempted: 0, successful: 0, failed: 0, skipped: 1, bytesInspected: 0, truncated: false, durationMs: 0, detail: "reputation: not requested." },
+    },
+  },
   dependencies: { total: 0, firstParty: 0, thirdParty: 0, uniqueHosts: [], items: [] },
   dependencyMap: {
     createdAt: new Date().toISOString(),
@@ -123,6 +132,10 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 768, height: 102
   assert.match(signals, /Password field observed/);
   assert.match(signals, /Forms submit on-site/);
   assert.match(signals, /Sign-in language/);
+  // Coverage statuses are contract enums; the observation note must phrase
+  // them for readers instead of surfacing raw tokens like "unavailable".
+  const observationNote = await page.textContent("#observation-note");
+  assert.match(observationNote, /Coverage: core trace complete, dependency map could not run, reputation checks not requested\./);
   // A derived finding's evidence citation must be a working link to the
   // captured evidence: activating it opens the cited hop's header list and
   // flashes the exact row, instead of leaving the path as inert text.

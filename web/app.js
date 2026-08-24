@@ -385,9 +385,11 @@
       $("#report-url").removeAttribute("href");
     }
     const vantage = [report.observation.colo, report.observation.country].filter(Boolean).join(", ");
+    // Coverage statuses are contract enums; the on-screen sentence translates
+    // them so a reader never has to guess what "unavailable" implies here.
     const coverage = report.coverage;
     const coverageText = coverage
-      ? ` Coverage: core ${coverage.phases.core.status}, dependency map ${coverage.phases.dependencies.status}, reputation ${coverage.phases.reputation.status}.`
+      ? ` Coverage: core trace ${coveragePhrase(coverage.phases.core.status)}, dependency map ${coveragePhrase(coverage.phases.dependencies.status)}, reputation checks ${coveragePhrase(coverage.phases.reputation.status)}.`
       : "";
     $("#observation-note").textContent = `${report.observation.disclaimer}${vantage ? ` This trace executed through ${vantage}.` : ""}${coverageText}`;
     const storedUntil = storedUntilText(report.expiresAt);
@@ -422,6 +424,18 @@
     }
     document.title = `${report.hostname}: RequestScope`;
     setTimeout(() => scrollToEl(reportPanel, "start"), 280);
+  }
+
+  const COVERAGE_PHRASES = {
+    complete: "complete",
+    partial: "partial",
+    failed: "failed",
+    unavailable: "could not run",
+    skipped: "not requested",
+  };
+
+  function coveragePhrase(status) {
+    return COVERAGE_PHRASES[status] ?? String(status);
   }
 
   function renderMetrics(report) {
