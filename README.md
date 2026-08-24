@@ -58,6 +58,15 @@ GET  /api/scans/:id/export
 Read endpoints also answer HEAD probes (`curl -I` health checks) with the GET
 headers and no body.
 
+Request bodies are strict: fields outside the published schemas are rejected
+with a `400` naming the field, matching the `additionalProperties: false`
+declarations in the OpenAPI contract. Known endpoints answer unsupported
+methods with `405` and an `Allow` header instead of a generic `404`. Browser
+integrations can read `ETag`, `Location`, `Retry-After`, and
+`Content-Disposition` from cross-origin responses because they are listed in
+`Access-Control-Expose-Headers`; the web client itself uses this to revalidate
+share links in-session without re-downloading report bodies.
+
 Streamed traces are validated and metered before any byte is streamed: invalid
 targets answer `400`, disallowed origins or non-public targets `403`, and
 exhausted quotas `429` with `Retry-After`. Only failures discovered mid-trace
