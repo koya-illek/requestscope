@@ -137,7 +137,7 @@ describe("API routing and input boundary", () => {
     await expect(response.json()).resolves.toEqual({ error: "Invalid API credential" });
   });
 
-  it("streams a structured error for a blocked target", async () => {
+  it("rejects a blocked target at the HTTP boundary before the stream opens", async () => {
     const response = await worker.fetch(new Request("https://api.example/api/scans/stream", {
       method: "POST",
       headers: {
@@ -146,6 +146,76 @@ describe("API routing and input boundary", () => {
       },
       body: JSON.stringify({ url: "http://127.0.0.1" }),
     }), env, ctx);
+    expect(response.status).toBe(403);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(response.headers.get("content-type")).not.toContain("ndjson");
+    await expect(response.json()).resolves.toEqual({ error: "Direct IP address targets are not supported." });
+  });
+
+  it("answers an invalid stream target with 400 before charging quota", async () => {
+    const db = { prepare: vi.fn(() => { throw new Error("quota must not be charged for an invalid target"); }) } as unknown as D1Database;
+    const response = await worker.fetch(new Request("https://api.example/api/scans/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: "not a url" }),
+    }), { ...env, DB: db }, ctx);
+    expect(response.status).toBe(400);
+    expect(db.prepare).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({ error: "Enter a valid public URL." });
+  });
+
+  it("rate-limits the stream at the HTTP boundary and charges exactly once per request", async () => {
+    const cachedReport = { id: "cached-stream-report" };
+    vi.stubGlobal("caches", {
+      open: vi.fn(async () => ({
+        match: vi.fn(async () => new Response(JSON.stringify(cachedReport))),
+      })),
+    });
+    let requestCount = 0;
+    const db = {
+      prepare: vi.fn(() => ({
+        bind: vi.fn(() => ({ first: vi.fn(async () => ({ request_count: requestCount += 1 })) })),
+      })),
+    } as unknown as D1Database;
+    const streamRequest = () => new Request("https://api.example/api/scans/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com" }),
+    });
+
+    const first = await worker.fetch(streamRequest(), { ...env, DAILY_SCAN_LIMIT: "1", DB: db }, ctx);
+    expect(first.status).toBe(200);
+    const events = (await first.text()).trim().split("\n").map((line) => JSON.parse(line));
+    expect(events[0]).toMatchObject({ type: "progress", stage: "accepted" });
+    expect(events.at(-1)).toMatchObject({ type: "result", report: cachedReport });
+
+    const second = await worker.fetch(streamRequest(), { ...env, DAILY_SCAN_LIMIT: "1", DB: db }, ctx);
+    expect(second.status).toBe(429);
+    expect(second.headers.get("retry-after")).toBe("3600");
+    await expect(second.json()).resolves.toEqual({ error: "Daily anonymous scan limit of 1 reached." });
+    // One charge per stream request: the boundary metered it, so the
+    // createScan call inside the stream must not meter again.
+    expect(requestCount).toBe(2);
+  });
+
+  it("delivers mid-trace failures as in-band NDJSON error events", async () => {
+    // Inconclusive public-DNS resolution is discovered only once the trace
+    // has started, so it cannot be an HTTP status any more: the stream
+    // reports it as a structured error event instead.
+    vi.stubGlobal("caches", {
+      open: vi.fn(async () => ({ match: vi.fn(async () => null) })),
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("resolver unavailable", { status: 503 })));
+    const db = {
+      prepare: vi.fn(() => ({
+        bind: vi.fn(() => ({ first: vi.fn(async () => ({ request_count: 1 })) })),
+      })),
+    } as unknown as D1Database;
+    const response = await worker.fetch(new Request("https://api.example/api/scans/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com/trace-fails-late" }),
+    }), { ...env, DB: db }, ctx);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("application/x-ndjson");
     const events = (await response.text()).trim().split("\n").map((line) => JSON.parse(line));

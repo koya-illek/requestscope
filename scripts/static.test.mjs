@@ -53,11 +53,15 @@ test("public shell exposes metadata, keyboard navigation and privacy", async () 
   // payload change; the published schema must not require an absent field.
   assert.ok(!openapi.includes("environment: { type: string }"));
   assert.ok(!/required: \[[^\]]*environment/.test(openapi));
-  // Streamed traces deliver blocked targets and rate limits as in-band NDJSON
-  // error events; only validation and origin failures are HTTP-level.
+  // Submission-time validation and metering are HTTP-level for streamed
+  // traces: invalid input, disallowed targets, and exhausted quotas are
+  // rejected with real status codes before any NDJSON byte; only failures
+  // discovered after streaming starts are in-band error events.
   const streamSection = openapi.slice(openapi.indexOf("/api/scans/stream:"), openapi.indexOf("  /api/scans/{reportId}:"));
   assert.ok(streamSection.includes("in-band as error events"));
-  assert.ok(!streamSection.includes("'429'"));
+  for (const status of ["'400'", "'403'", "'429'"]) {
+    assert.ok(streamSection.includes(status), `stream contract must document ${status} pre-stream rejection`);
+  }
   assert.ok(openapi.includes("claimedOrganisation:"));
   assert.ok(openapi.includes("cloudflare_family_dns"));
   assert.ok(openapi.includes("/mcp/v2:"));

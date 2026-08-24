@@ -87,6 +87,11 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): 
       if (request.headers.get("Origin") && !origin) return json({ error: "Origin not allowed" }, 403, cors);
       const input = await readScanInput(request);
       if (url.pathname.endsWith("/stream")) {
+        // Submission-time validation and metering stay at the HTTP boundary:
+        // an invalid target or exhausted quota must be a real 400/403/429
+        // with Retry-After, not a committed-200 stream that errors in-band.
+        normalizeUrl(input.url);
+        await enforceRateLimit(request, env);
         return streamScan(request, input, env, ctx, cors);
       }
       const report = await createScan(request, input, env, ctx);
@@ -284,8 +289,9 @@ async function createScan(
   options: { chargeAnonymousScanQuota?: boolean } = {},
 ): Promise<ScanReport> {
   const normalized = normalizeUrl(input.url);
-  // MCP tool calls are metered by the dedicated "mcp" scope; charging the
-  // anonymous scan scope as well would make MCP_DAILY_LIMIT unreachable.
+  // MCP tool calls are metered by the dedicated "mcp" scope and stream
+  // requests are metered before their response opens; charging the anonymous
+  // scan scope as well would double-count or make MCP_DAILY_LIMIT unreachable.
   if (options.chargeAnonymousScanQuota !== false) await enforceRateLimit(request, env);
   const cacheKey = await recentScanCacheKey(
     request.url,
@@ -355,7 +361,9 @@ function streamScan(
       };
       try {
         send({ type: "progress", stage: "accepted", message: "Trace accepted" });
-        const report = await createScan(request, input, env, ctx, (event) => send({ type: "progress", ...event }));
+        // The stream branch charged the scan quota before opening this
+        // response, so createScan must not meter a second time.
+        const report = await createScan(request, input, env, ctx, (event) => send({ type: "progress", ...event }), { chargeAnonymousScanQuota: false });
         send({ type: "result", report });
       } catch (error) {
         const normalized = normalizeError(error);
