@@ -707,7 +707,7 @@
         lines.push(
           "Detected SDKs:",
           ...sdks.slice(0, 10).map((sdk) => `- ${sdk.name} (${sdk.domain})`),
-          ...(sdks.length > 10 ? [`- ... ${sdks.length - 10} more`] : []),
+          ...(sdks.length > 10 ? [`- … ${sdks.length - 10} more`] : []),
           ""
         );
       }
