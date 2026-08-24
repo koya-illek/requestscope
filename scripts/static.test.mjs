@@ -168,9 +168,9 @@ test("the Inter variable font is self-hosted, preloaded, and CSP-allowed", async
     read("_headers"),
     read("styles.css"),
   ]);
-  await assert.doesNotReject(() => access(new URL("../web/fonts/inter-latin-wght-normal.woff2", import.meta.url)));
+  await assert.doesNotReject(() => access(new URL("../web/fonts/inter-latin-wght-normal-v5.3.0.woff2", import.meta.url)));
   for (const page of [html, privacy]) {
-    assert.match(page, /rel="preload" href="\.\/fonts\/inter-latin-wght-normal\.woff2" as="font"/);
+    assert.match(page, /rel="preload" href="\.\/fonts\/inter-latin-wght-normal-v5\.3\.0\.woff2" as="font"/);
   }
   const csp = headers.match(/Content-Security-Policy: (.+)/)?.[1] || "";
   assert.match(csp, /font-src 'self'/);
@@ -197,7 +197,7 @@ test("shipped asset weights stay inside the performance budget", async () => {
   const budgets = [
     { file: "app.js", maxBytes: 46 * 1024, maxGzipBytes: 14 * 1024 },
     { file: "styles.css", maxBytes: 42 * 1024, maxGzipBytes: 11 * 1024 },
-    { file: "fonts/inter-latin-wght-normal.woff2", maxBytes: 52 * 1024 },
+    { file: "fonts/inter-latin-wght-normal-v5.3.0.woff2", maxBytes: 52 * 1024 },
   ];
   let totalRaw = 0;
   for (const { file, maxBytes, maxGzipBytes } of budgets) {
@@ -223,6 +223,24 @@ test("the evidence report survives printing to paper", async () => {
   }
   assert.match(printBlock, /--bg: #ffffff/, "print must remap the palette tokens for white paper");
   assert.match(printBlock, /break-inside: avoid/, "evidence rows must not split across pages");
+});
+
+test("static assets ship a tiered caching policy", async () => {
+  // The shell deploys under stable URLs without a build step, so it must
+  // revalidate every time; the versioned font is immutable; icons and
+  // published contracts sit between those extremes.
+  const headers = await read("_headers");
+  const rules = headers.split(/\n(?=\S)/).map((block) => block.trim());
+  const cacheControlFor = (pathLine) =>
+    rules.find((block) => block.startsWith(pathLine))?.match(/Cache-Control: (.+)/)?.[1] || "";
+  assert.equal(cacheControlFor("/fonts/*"), "public, max-age=31536000, immutable", "the versioned font must be immutable");
+  for (const path of ["/favicon.svg", "/apple-touch-icon.svg", "/social-card.png", "/social-card.svg"]) {
+    assert.match(cacheControlFor(path), /max-age=604800/, `${path} should be cacheable for a week`);
+  }
+  for (const path of ["/robots.txt", "/sitemap.xml", "/openapi.yaml", "/mcp-copilot.yaml"]) {
+    assert.match(cacheControlFor(path), /max-age=3600/, `${path} should be cacheable for an hour`);
+  }
+  assert.ok(!headers.includes("/app.js"), "the app shell must not gain long-lived freshness while it has unhashed URLs");
 });
 
 test("version identifiers live in one module and match package.json", async () => {

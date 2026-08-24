@@ -5,3 +5,35 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=()
   Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://cloudflareinsights.com; frame-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
+
+# The HTML shell, app.js, styles.css, and config.js intentionally keep the
+# platform default (max-age=0, must-revalidate): they deploy under the same
+# URLs without a build step, so every visitor revalidates against the ETag.
+# Only genuinely immutable or slow-changing artifacts get freshness.
+
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/favicon.svg
+  Cache-Control: public, max-age=604800
+
+/apple-touch-icon.svg
+  Cache-Control: public, max-age=604800
+
+/social-card.png
+  Cache-Control: public, max-age=604800
+
+/social-card.svg
+  Cache-Control: public, max-age=604800
+
+/robots.txt
+  Cache-Control: public, max-age=3600
+
+/sitemap.xml
+  Cache-Control: public, max-age=3600
+
+/openapi.yaml
+  Cache-Control: public, max-age=3600
+
+/mcp-copilot.yaml
+  Cache-Control: public, max-age=3600
