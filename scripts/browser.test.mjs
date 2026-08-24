@@ -30,6 +30,22 @@ const report = {
   },
   pageSecuritySignals: { passwordForm: true, forms: 1, externalFormAction: false, matchedLanguage: ["login"] },
   dependencies: { total: 0, firstParty: 0, thirdParty: 0, uniqueHosts: [], items: [] },
+  dependencyMap: {
+    createdAt: new Date().toISOString(),
+    durationMs: 210,
+    sources: {
+      csp: { present: false, directives: {}, domains: [] },
+      jsBundles: { attempted: 1, successful: 1, failed: 0, skipped: 0, bundlesFetched: 1, totalBytes: 20480, truncated: false, domains: ["google-analytics.com"], patterns: [] },
+      certTransparency: { subdomains: [], total: 0 },
+    },
+    domains: [
+      { domain: "google-analytics.com", category: "analytics", serviceName: "Google Analytics", source: "multiple", piiRisk: true, postAuthOnly: false, occurrences: 2, evidence: ["js bundle"] },
+    ],
+    sdks: [{ name: "Google Analytics", domain: "google-analytics.com", category: "analytics", match: "ga('create'" }],
+    ssl: { source: "certificate_transparency", protocol: null, cipher: null, issuer: null, subject: null, validFrom: "2024-01-01T00:00:00Z", validTo: "2026-01-01T00:00:00Z", daysUntilExpiry: null, authorityKeyIdentifier: null },
+    takeover: [{ subdomain: "stale.micros0ft.example", cname: "ghost.io", resolvable: false, httpStatus: null, vulnerable: true, evidence: "CNAME points to an unclaimed hosting bucket." }],
+    summary: { totalDomains: 2, byCategory: { analytics: 2 }, piiRisk: 1, postAuthOnly: 1 },
+  },
   findings: [],
   summary: { critical: 0, warning: 0, positive: 0, info: 0 },
   urlRisk: {
@@ -392,6 +408,13 @@ assert.match(markdown, /^# RequestScope report: micros0ft\.example\n/);
 assert.match(markdown, /\*\*Verdict:\*\* HIGH · 66\/100/);
 assert.match(markdown, /## External reputation/);
 assert.match(markdown, /1\. HTTP 302 https:\/\/micros0ft\.example\/login -> https:\/\/micros0ft\.example\/signin \(41ms\)/);
+// A mapped trace must carry its dependency-map evidence into the brief.
+assert.match(markdown, /## External dependency map/);
+assert.match(markdown, /2 external domains: 1 possible data-bearing, 1 not observed in the initial HTML\./);
+assert.match(markdown, /Categories: analytics 2\./);
+assert.match(markdown, /- Google Analytics \(google-analytics\.com\)/);
+assert.match(markdown, /Potential subdomain takeover evidence:/);
+assert.match(markdown, /- stale\.micros0ft\.example -> ghost\.io/);
 assert.match(markdown, /Full evidence: .*#abcdefghijklmnop$/m);
 assert.match(markdown, /Stored until .+, then deleted automatically/);
 const markdownLines = markdown.split("\n").length;

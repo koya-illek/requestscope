@@ -561,7 +561,19 @@
         ${url}
         <span class="party">${escapeHtml(item.party)}</span>
       </div>`;
-    }).join("") : `<div class="dns-group"><p class="dns-empty">No matching resource references were extracted from the inspected HTML.</p></div>`;
+    }).join("") : `<div class="dns-group"><p class="dns-empty">${dependencyEmptyCopy()}</p></div>`;
+  }
+
+  /** The empty list must explain itself: a trace that ended on a PDF or an
+   * API response has no resource references to show, and that is a different
+   * situation from an HTML page with no external references. */
+  function dependencyEmptyCopy() {
+    const report = state.report;
+    const contentType = report.http.contentType || "";
+    if (report.http.finalStatus !== null && !/(?:text\/html|application\/xhtml\+xml)/i.test(contentType)) {
+      return `The final response was not HTML (${contentType.split(";")[0] || "unknown type"}), so there are no resource references to list.`;
+    }
+    return "No matching resource references were extracted from the inspected HTML.";
   }
 
   async function copyShareLink() {
@@ -675,6 +687,40 @@
     );
     if (deps.uniqueHosts.length) {
       lines.push(`Hosts: ${deps.uniqueHosts.slice(0, 15).join(", ")}${deps.uniqueHosts.length > 15 ? ", …" : ""}`, "");
+    }
+    const depMap = report.dependencyMap;
+    if (depMap) {
+      // A mapped trace carries its richest evidence here; a ticket brief
+      // without it would understate what was actually observed.
+      const cats = Object.entries(depMap.summary.byCategory || {}).filter(([, count]) => count > 0);
+      lines.push(
+        "## External dependency map",
+        "",
+        `${depMap.summary.totalDomains} external domains: ${depMap.summary.piiRisk} possible data-bearing, ${depMap.summary.postAuthOnly} not observed in the initial HTML.`,
+      );
+      if (cats.length) {
+        lines.push(`Categories: ${cats.map(([name, count]) => `${name} ${count}`).join(", ")}.`);
+      }
+      lines.push("");
+      const sdks = depMap.sdks || [];
+      if (sdks.length) {
+        lines.push(
+          "Detected SDKs:",
+          ...sdks.slice(0, 10).map((sdk) => `- ${sdk.name} (${sdk.domain})`),
+          ...(sdks.length > 10 ? [`- ... ${sdks.length - 10} more`] : []),
+          ""
+        );
+      }
+      const vulnerable = (depMap.takeover || []).filter((item) => item.vulnerable);
+      if (vulnerable.length) {
+        lines.push(
+          "Potential subdomain takeover evidence:",
+          ...vulnerable.slice(0, 10).map((item) => `- ${item.subdomain} -> ${item.cname || "none"}`),
+          ""
+        );
+      } else {
+        lines.push("Subdomain takeover: no vulnerable signatures among the checked names.", "");
+      }
     }
     if (report.coverage) {
       const phases = report.coverage.phases;
