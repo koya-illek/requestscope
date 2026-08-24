@@ -174,6 +174,7 @@ export function assessUrlRisk(
     traceId: report.id,
     reportPath: `/api/scans/${report.id}`,
     claimedOrganisation: claimed,
+    deviceProfile: report.observation.deviceProfile,
     services,
     findings,
     reputation,

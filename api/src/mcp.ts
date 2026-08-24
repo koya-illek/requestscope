@@ -320,7 +320,7 @@ function riskTool() {
       required: ["url"],
       properties: {
         url: { type: "string", maxLength: 2048, description: "Public HTTP or HTTPS URL to trace and assess." },
-        mobileUserAgent: { type: "boolean", default: false, description: "Request the target as mobile Safari instead of the RequestScope identity, exposing device-specific content. The report records which profile was used." },
+        mobileUserAgent: { type: "boolean", default: false, description: "Request the target as mobile Safari instead of the RequestScope identity. Some sites serve different content per device; the assessment records which profile was used." },
         claimedOrganisation: { type: "string", maxLength: 120, description: "Organisation the surrounding message claims to represent." },
         messageContext: { type: "string", maxLength: 1000, description: "Brief non-sensitive context, for example Password reset email." },
         externalReputation: { type: "boolean", default: false, description: "Set true only after the user agrees that the original and final URL, including query values, may be sent to Google Web Risk and PhishTank; Cloudflare's malware-filtering DNS receives hostnames only." },
@@ -346,6 +346,7 @@ function urlRiskAssessmentSchema() {
       traceId: { type: "string" },
       reportPath: { type: "string" },
       claimedOrganisation: { type: ["string", "null"] },
+      deviceProfile: { type: "string", enum: ["desktop", "mobile"], description: "Request identity the observation used." },
       services: { type: "array", items: { type: "object" } },
       findings: { type: "array", items: { type: "object" } },
       reputation: reputationAssessmentSchema(),

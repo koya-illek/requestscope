@@ -95,6 +95,9 @@ describe("analyzeUrl", () => {
 
     const mobile = await analyzeUrl("https://example.com", 14, {}, () => {}, { mapDependencies: true, deviceProfile: "mobile" });
     expect(mobile.observation.deviceProfile).toBe("mobile");
+    // The embedded risk assessment must carry the profile too, so
+    // assess_url_risk consumers can tell which identity observed the target.
+    expect(mobile.urlRisk?.deviceProfile).toBe("mobile");
     // Core hop and dependency bundle requests both carry the mobile identity.
     expect(userAgents.length).toBeGreaterThanOrEqual(2);
     expect(userAgents.every((agent) => agent.includes("iPhone"))).toBe(true);

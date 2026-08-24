@@ -110,6 +110,7 @@ export interface UrlRiskAssessment {
   traceId: string;
   reportPath: string;
   claimedOrganisation: string | null;
+  deviceProfile?: "desktop" | "mobile";
   services: Array<{ hostname: string; organisation: string; category: DomainCategory }>;
   findings: UrlRiskFinding[];
   reputation: ReputationAssessment;

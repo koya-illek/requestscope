@@ -305,7 +305,7 @@ components:
         mobileUserAgent:
           type: boolean
           default: false
-          description: Request the target as mobile Safari instead of the RequestScope identity, exposing device-specific content. The report records which profile was used.
+          description: Request the target as mobile Safari instead of the RequestScope identity, exposing device-specific content. The assessment records which profile was used via deviceProfile.
         claimedOrganisation:
           type: string
           maxLength: 120
@@ -332,6 +332,7 @@ components:
         traceId: { type: string }
         reportPath: { type: string }
         claimedOrganisation: { type: string, nullable: true }
+        deviceProfile: { type: string, enum: [desktop, mobile], description: Request identity the observation used. }
         services:
           type: array
           items:
