@@ -347,6 +347,16 @@
       ? ` Coverage: core ${coverage.phases.core.status}, dependency map ${coverage.phases.dependencies.status}, reputation ${coverage.phases.reputation.status}.`
       : "";
     $("#observation-note").textContent = `${report.observation.disclaimer}${vantage ? ` This trace executed through ${vantage}.` : ""}${coverageText}`;
+    const storedUntil = storedUntilText(report.expiresAt);
+    const storedNote = $("#report-stored");
+    // A share recipient must know how long the evidence stays retrievable
+    // instead of discovering it through a 404 after expiry.
+    if (storedUntil) {
+      storedNote.textContent = `Stored until ${storedUntil}, then deleted automatically.`;
+      storedNote.classList.remove("hidden");
+    } else {
+      storedNote.classList.add("hidden");
+    }
     renderMetrics(report);
     renderUrlRisk(report.urlRisk);
     renderTimeline(report.http.hops);
@@ -645,7 +655,11 @@
     lines.push(
       "---",
       "",
-      `Full evidence: ${location.origin}${location.pathname}#${report.id}`,
+      `Full evidence: ${location.origin}${location.pathname}#${report.id}`
+    );
+    const storedUntil = storedUntilText(report.expiresAt);
+    if (storedUntil) lines.push(`Stored until ${storedUntil}, then deleted automatically.`);
+    lines.push(
       "Timings are Cloudflare edge observations, not browser measurements.",
       "A low risk verdict does not certify that a URL is safe."
     );
@@ -713,6 +727,14 @@
   function formatMs(value) {
     const milliseconds = Number(value) || 0;
     return milliseconds >= 1000 ? `${(milliseconds / 1000).toFixed(2)}s` : `${milliseconds}ms`;
+  }
+
+  /** The viewer-facing storage date for a report's expiry timestamp, or null
+   * when the field is missing or unparseable. */
+  function storedUntilText(value) {
+    const expiry = Date.parse(String(value ?? ""));
+    if (!Number.isFinite(expiry)) return null;
+    return new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" }).format(expiry);
   }
 
   function escapeHtml(value) {

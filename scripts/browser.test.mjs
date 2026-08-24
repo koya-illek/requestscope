@@ -242,6 +242,8 @@ await linkPage.route("**/api/scans/abcdefghijklmnop*", async (route) => {
 await linkPage.goto(`${pathToFileURL(path.resolve(webRoot, "index.html")).href}#abcdefghijklmnop`);
 await linkPage.waitForSelector("#risk-verdict.high", { state: "visible" });
 assert.equal(await linkPage.textContent("#risk-verdict"), "HIGH · 66/100");
+// The saved report must disclose how long it stays retrievable.
+assert.match(await linkPage.textContent("#report-stored"), /^Stored until .+, then deleted automatically\.$/);
 assert.equal(savedReportFetches, 1);
 assert.equal(await linkPage.title(), "micros0ft.example: RequestScope");
 assert.equal(await linkPage.evaluate(() => document.activeElement?.id), "report-host");
@@ -373,6 +375,7 @@ assert.match(markdown, /\*\*Verdict:\*\* HIGH · 66\/100/);
 assert.match(markdown, /## External reputation/);
 assert.match(markdown, /1\. HTTP 302 https:\/\/micros0ft\.example\/login -> https:\/\/micros0ft\.example\/signin \(41ms\)/);
 assert.match(markdown, /Full evidence: .*#abcdefghijklmnop$/m);
+assert.match(markdown, /Stored until .+, then deleted automatically/);
 const markdownLines = markdown.split("\n").length;
 assert.ok(markdownLines > 10, "the markdown brief must keep its line structure in the textarea field");
 await radarPage.keyboard.press("Escape");

@@ -132,6 +132,15 @@ test("the evidence report copies as Markdown through a line-break-safe fallback"
   assert.match(linkDialog, /<textarea id="link-field"[^>]*readonly>/, "the manual-copy field must preserve line breaks");
 });
 
+test("a stored report discloses its storage expiry on screen and in the brief", async () => {
+  // Share recipients must learn how long the evidence stays retrievable from
+  // the artifact itself, not from a 404 after expiry.
+  const [html, app] = await Promise.all([read("index.html"), read("app.js")]);
+  assert.match(html, /id="report-stored"/);
+  assert.match(app, /function storedUntilText/);
+  assert.equal(app.split("\n").filter((line) => line.includes("then deleted automatically")).length, 2, "screen note and markdown brief must share the expiry copy");
+});
+
 test("hash navigation only validates hashes that name no element on the page", async () => {
   const [app, html] = await Promise.all([read("app.js"), read("index.html")]);
   // The status pill and skip link change the hash to #status/#main-content;

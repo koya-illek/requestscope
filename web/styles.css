@@ -264,6 +264,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .report-header { display: flex; justify-content: space-between; gap: 30px; align-items: end; border-bottom: 1px solid var(--line); padding-bottom: 34px; }
 .report-header h2 { margin: 0 0 8px; font-size: clamp(32px, 5vw, 54px); letter-spacing: -.05em; }
 .report-header > div > a { display: block; max-width: 700px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font: 400 12px/1.5 var(--mono); white-space: nowrap; }
+.report-stored { margin: 8px 0 0; color: var(--muted); font: 400 11px/1.5 var(--mono); }
 .report-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .secondary-button, .icon-button {
   min-height: 44px;
@@ -758,6 +759,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   /* Full URLs are the product's evidence; on touch there are no tooltips,
      so let them wrap instead of hiding behind ellipsis. */
   .hop-main strong, .report-header > div > a { white-space: normal; overflow-wrap: anywhere; }
+  .report-stored { white-space: normal; overflow-wrap: anywhere; }
   .dependency { grid-template-columns: 70px minmax(0, 1fr); }
   .dependency a { white-space: normal; overflow-wrap: anywhere; }
   .dependency .party { display: none; }
