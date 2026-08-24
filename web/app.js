@@ -450,12 +450,15 @@
     const finalStatus = report.http.finalStatus ?? "Unavailable";
     const statusClass = Number(finalStatus) >= 200 && Number(finalStatus) < 400 ? "good" : "warn";
     const redirectCount = report.http.hops.filter((hop) => [301, 302, 303, 307, 308].includes(hop.status) && hop.location).length;
+    // A trace that ended on a PDF or an API response has no resource
+    // references to count; showing 0 would claim a measurement never made.
+    const inspectedHtml = /(?:text\/html|application\/xhtml\+xml)/i.test(report.http.contentType || "");
     const metrics = [
       ["Final status", finalStatus, statusClass],
       ["Total trace time", formatMs(report.totalDurationMs), ""],
       ["Redirects", redirectCount, redirectCount <= 2 ? "good" : "warn"],
       ["DNS addresses", report.dns.addresses.length, report.dns.addresses.length ? "good" : "warn"],
-      ["HTML references", report.dependencies.total, ""]
+      ["HTML references", inspectedHtml ? report.dependencies.total : "n/a", ""]
     ];
     $("#metrics").innerHTML = metrics.map(([label, value, cls]) =>
       `<div class="metric"><small>${escapeHtml(label)}</small><strong class="${cls}">${escapeHtml(String(value))}</strong></div>`

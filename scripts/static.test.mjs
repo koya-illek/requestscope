@@ -233,6 +233,13 @@ test("JSON export verifies the response before it becomes a download", async () 
   assert.match(fn, /createObjectURL/, "the download must come from the verified response body");
 });
 
+test("the HTML-references metric distinguishes zero from not applicable", async () => {
+  // A trace ending on a non-HTML response has no references to count; the
+  // metric must not claim a measurement that was never made.
+  const app = await read("app.js");
+  assert.match(app, /inspectedHtml \? report\.dependencies\.total : "n\/a"/);
+});
+
 test("shipped asset weights stay inside the performance budget", async () => {
   // The product ships no build step by design, so the budget is the guard:
   // raw bytes bound what a maintainer may add, and the gzip numbers bound
