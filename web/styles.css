@@ -378,6 +378,22 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .finding h4 { margin: 0 0 6px; font-size: 13px; }
 .finding p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .finding code { display: block; margin-top: 8px; color: var(--muted); font: 400 9px/1 var(--mono); }
+.finding-meta { display: flex; align-items: baseline; gap: 4px; margin-top: 8px; }
+.finding-meta > span { color: var(--muted); font: 400 9px/1 var(--mono); }
+.evidence-link {
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: 400 9px/1 var(--mono);
+  text-align: left;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.evidence-link:hover, .evidence-link:focus-visible { color: var(--accent); }
+@keyframes evidence-flash { 0% { background: rgba(89, 240, 167, .22); } 100% { background: transparent; } }
+.evidence-flash { animation: evidence-flash 1.7s ease-out both; }
 .dependencies-panel { margin-top: 20px; }
 .filter-set { gap: 5px !important; }
 .filter { min-height: 44px; padding: 6px 9px; border: 1px solid transparent; background: transparent; color: var(--muted); font: 400 10px/1 var(--mono); cursor: pointer; }

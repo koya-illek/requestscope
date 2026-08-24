@@ -46,8 +46,10 @@ const report = {
     takeover: [{ subdomain: "stale.micros0ft.example", cname: "ghost.io", resolvable: false, httpStatus: null, vulnerable: true, evidence: "CNAME points to an unclaimed hosting bucket." }],
     summary: { totalDomains: 2, byCategory: { analytics: 2 }, piiRisk: 1, postAuthOnly: 1 },
   },
-  findings: [],
-  summary: { critical: 0, warning: 0, positive: 0, info: 0 },
+  findings: [
+    { code: "security-headers-present", severity: "positive", title: "Core response headers observed", detail: "The final response included HSTS.", evidencePath: "http.hops.1.responseHeaders.strict-transport-security", confidence: "high", evidenceKind: "derived_finding" },
+  ],
+  summary: { critical: 0, warning: 0, positive: 0, info: 1 },
   urlRisk: {
     schemaVersion: 1, verdict: "high", riskScore: 66, confidence: "high",
     summary: "Strong risk indicators were observed. Review the evidence before visiting or entering information.",
@@ -121,6 +123,16 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 768, height: 102
   assert.match(signals, /Password field observed/);
   assert.match(signals, /Forms submit on-site/);
   assert.match(signals, /Sign-in language/);
+  // A derived finding's evidence citation must be a working link to the
+  // captured evidence: activating it opens the cited hop's header list and
+  // flashes the exact row, instead of leaving the path as inert text.
+  await page.click("#findings .evidence-link");
+  await page.waitForFunction(() =>
+    Boolean(document.querySelector('#timeline [data-evidence="http.hops.1.responseHeaders.strict-transport-security"]')?.classList.contains("evidence-flash")));
+  assert.equal(await page.locator('#timeline .hop:nth-child(2) .hop-evidence[open]').count(), 1,
+    "the citation must open the cited hop's recorded headers");
+  const flashClass = await page.getAttribute('#timeline [data-evidence="http.hops.1.responseHeaders.strict-transport-security"]', "class");
+  assert.ok(flashClass.includes("evidence-flash"), "the cited header row must be flashed");
   await page.locator("#timeline .hop:first-child .hop-evidence summary").click();
   const redirectHeaders = await page.locator("#timeline .hop:first-child .hop-header dt").allTextContents();
   assert.deepEqual(redirectHeaders, ["location", "server", "cache-control"]);

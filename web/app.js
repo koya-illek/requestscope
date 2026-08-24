@@ -91,6 +91,14 @@
   methodDialog.addEventListener("click", (event) => {
     if (event.target === methodDialog) methodDialog.close();
   });
+  // Derived findings cite evidence paths such as
+  // http.hops.1.responseHeaders.cache-control; activating the citation must
+  // take the reader to that captured evidence instead of leaving the path as
+  // inert text.
+  $("#findings").addEventListener("click", (event) => {
+    const link = event.target instanceof Element ? event.target.closest(".evidence-link") : null;
+    if (link?.dataset.path) revealEvidence(link.dataset.path);
+  });
   $$(".filter").forEach((button) => button.addEventListener("click", () => {
     $$(".filter").forEach((item) => {
       const active = item === button;
@@ -399,13 +407,13 @@
     renderPageSignals(report.pageSecuritySignals);
     renderFindings(report.findings);
     renderDependencySummary(report.dependencies);
-    renderDependencies("all");
-    $$(".filter").forEach((item) => {
-      const active = item.dataset.filter === "all";
-      item.classList.toggle("active", active);
-      item.setAttribute("aria-pressed", String(active));
-    });
+    resetDependencyFilters();
     renderDepMap(report.dependencyMap);
+    // Anchor surfaces for evidence-path navigation: a citation to finalUrl or
+    // an http-level fact resolves to these when no deeper row matches.
+    $("#report-url").dataset.evidence = "finalUrl";
+    $("#timeline").dataset.evidence = "http";
+    $("#dependencies").dataset.evidence = "dependencies";
     reportPanel.classList.remove("hidden");
     $("#report-host").focus({ preventScroll: true });
     if (updateLocation) {
@@ -477,6 +485,54 @@
     return "External reputation provider";
   }
 
+  /** Walk up the evidence path (http.hops.1.responseHeaders.cache-control →
+   * … → http) until a rendered surface stamped with that path is found. */
+  function evidenceTarget(path) {
+    const parts = String(path).split(".");
+    while (parts.length) {
+      let candidate;
+      try {
+        candidate = document.querySelector(`[data-evidence="${parts.join(".")}"]`);
+      } catch {
+        return null;
+      }
+      if (candidate) return candidate;
+      parts.pop();
+    }
+    return null;
+  }
+
+  function revealEvidence(path) {
+    const target = evidenceTarget(path);
+    if (!target) return;
+    const container = target.closest("details");
+    if (container && !container.open) container.open = true;
+    // A cited dependency row may be filtered out of view; citations always
+    // show the complete list before scrolling.
+    if (target.closest("#dependencies")) resetDependencyFilters();
+    scrollToEl(target, "center");
+    flashEvidence(target);
+  }
+
+  function flashEvidence(target) {
+    $$(".evidence-flash").forEach((element) => element.classList.remove("evidence-flash"));
+    target.classList.add("evidence-flash");
+    clearTimeout(Number(target.dataset.flashTimer || 0));
+    target.dataset.flashTimer = String(setTimeout(() => {
+      target.classList.remove("evidence-flash");
+      delete target.dataset.flashTimer;
+    }, 1800));
+  }
+
+  function resetDependencyFilters() {
+    $$(".filter").forEach((item) => {
+      const active = item.dataset.filter === "all";
+      item.classList.toggle("active", active);
+      item.setAttribute("aria-pressed", String(active));
+    });
+    renderDependencies("all");
+  }
+
   function renderTimeline(hops) {
     // The replay stagger is applied through CSSOM rather than a style
     // attribute so the production CSP can forbid inline styles entirely.
@@ -488,12 +544,12 @@
         hop.cf?.colo ? `PoP ${hop.cf.colo}` : null,
         hop.error
       ].filter(Boolean);
-      return `<article class="hop replay">
+      return `<article class="hop replay" data-evidence="http.hops.${hop.index}">
         <span class="hop-index">${String(hop.index + 1).padStart(2, "0")}</span>
         <div class="hop-main">
           <strong title="${escapeAttr(hop.url)}">${escapeHtml(hop.url)}</strong>
           <div class="hop-detail">${details.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
-          ${renderHopHeaders(hop.responseHeaders)}
+          ${renderHopHeaders(hop)}
         </div>
         <div class="hop-status">
           <span class="status-code ${codeClass}">${Number.isFinite(hop.status) && hop.status !== 0 ? hop.status : "ERR"}</span>
@@ -509,24 +565,25 @@
 
   /** The findings cite evidence paths like
    * http.hops.1.responseHeaders.cache-control; this is where that evidence
-   * becomes visible. Values are already redacted server-side before storage. */
-  function renderHopHeaders(headers) {
-    const entries = Object.entries(headers || {});
+   * becomes visible. Values are already redacted server-side before storage.
+   * Each row is stamped with its path so citations can scroll straight to it. */
+  function renderHopHeaders(hop) {
+    const entries = Object.entries(hop.responseHeaders || {});
     if (!entries.length) return "";
-    return `<details class="hop-evidence">
+    return `<details class="hop-evidence" data-evidence="http.hops.${hop.index}.responseHeaders">
       <summary>Response headers <span>${entries.length} recorded</span></summary>
       <dl class="hop-header-list">
-        ${entries.map(([name, value]) => `<div class="hop-header"><dt>${escapeHtml(name)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}
+        ${entries.map(([name, value]) => `<div class="hop-header" data-evidence="http.hops.${hop.index}.responseHeaders.${escapeHtml(name)}"><dt>${escapeHtml(name)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}
       </dl>
     </details>`;
   }
 
   function renderDns(queries) {
-    $("#dns-results").innerHTML = queries.map((query) => {
+    $("#dns-results").innerHTML = queries.map((query, index) => {
       const answers = query.answers.length
         ? query.answers.map((answer) => `<div class="dns-answer"><span>${escapeHtml(answer.type)}</span><code>${escapeHtml(answer.data)}</code><span>${Number(answer.ttl) || 0}s</span></div>`).join("")
         : `<div class="dns-empty">${escapeHtml(query.error || (query.status === 0 ? "No records returned" : `DNS status ${query.status}`))}</div>`;
-      return `<div class="dns-group">
+      return `<div class="dns-group" data-evidence="dns.queries.${index}">
         <div class="dns-title"><strong>${escapeHtml(query.type)} · ${escapeHtml(query.name)}</strong><span>${Number(query.elapsedMs) || 0}ms${query.authenticatedData ? " · DNSSEC AD" : ""}</span></div>
         ${answers}
       </div>`;
@@ -573,7 +630,7 @@
     $("#findings").innerHTML = findings.length ? findings.map((item) => `<article class="finding ${enumToken(item.severity, ["info", "positive", "warning", "critical"])}">
       <span class="finding-dot" aria-hidden="true"></span>
       <span class="visually-hidden">${escapeHtml(item.severity)}</span>
-      <div><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.detail)}</p><code>${escapeHtml(item.evidencePath)} · ${escapeHtml(item.confidence)} confidence</code></div>
+      <div><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.detail)}</p><div class="finding-meta"><button type="button" class="evidence-link" title="Show this evidence in the report" data-path="${escapeAttr(item.evidencePath)}">${escapeHtml(item.evidencePath)}</button><span> · ${escapeHtml(item.confidence)} confidence</span></div></div>
     </article>`).join("") : `<div class="dns-group"><p class="dns-empty">No derived findings were generated.</p></div>`;
   }
 
@@ -587,13 +644,15 @@
 
   function renderDependencies(filter = "all") {
     if (!state.report) return;
-    const items = state.report.dependencies.items.filter((item) => filter === "all" || item.party === filter);
-    $("#dependencies").innerHTML = items.length ? items.map((item) => {
+    const rows = state.report.dependencies.items
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => filter === "all" || item.party === filter);
+    $("#dependencies").innerHTML = rows.length ? rows.map(({ item, index }) => {
       const href = safeHref(item.url);
       const url = href
         ? `<a href="${escapeAttr(item.url)}" target="_blank" rel="noopener noreferrer" title="${escapeAttr(item.url)}">${escapeHtml(item.url)}</a>`
         : `<span title="${escapeAttr(item.url)}">${escapeHtml(item.url)}</span>`;
-      return `<div class="dependency">
+      return `<div class="dependency" data-evidence="dependencies.items.${index}">
         <span class="type">${escapeHtml(item.type)}</span>
         ${url}
         <span class="party">${escapeHtml(item.party)}</span>
