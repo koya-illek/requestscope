@@ -434,8 +434,28 @@ describe("HEAD probes on read endpoints", () => {
     expect(await exportHead.text()).toBe("");
   });
 
-  it("keeps write routes closed to HEAD", async () => {
+  it("keeps write routes closed to HEAD with a method-aware status", async () => {
     const response = await worker.fetch(new Request("https://api.example/api/scans", { method: "HEAD" }), env, ctx);
-    expect(response.status).toBe(404);
+    // The route exists and is open for POST only, so HEAD is a 405 with an
+    // Allow header, not a 404 that misdescribes the resource as missing.
+    expect(response.status).toBe(405);
+    expect(response.headers.get("allow")).toBe("POST, OPTIONS");
+  });
+
+  it("answers unsupported methods on known routes with 405 and Allow", async () => {
+    const cases: Array<[string, Request, string]> = [
+      ["GET /api/scans", new Request("https://api.example/api/scans", { method: "GET" }), "POST, OPTIONS"],
+      ["GET /api/scans/stream", new Request("https://api.example/api/scans/stream", { method: "GET" }), "POST, OPTIONS"],
+      ["DELETE stored report", new Request("https://api.example/api/scans/abcdefghijklmnop", { method: "DELETE" }), "GET, HEAD, OPTIONS"],
+      ["POST export", new Request("https://api.example/api/scans/abcdefghijklmnop/export", { method: "POST" }), "GET, HEAD, OPTIONS"],
+      ["PUT health", new Request("https://api.example/api/health", { method: "PUT" }), "GET, HEAD, OPTIONS"],
+      ["POST discovery", new Request("https://api.example/api", { method: "POST" }), "GET, HEAD, OPTIONS"],
+    ];
+    for (const [label, request, allow] of cases) {
+      const response = await worker.fetch(request, env, ctx);
+      expect(response.status, label).toBe(405);
+      expect(response.headers.get("allow"), label).toBe(allow);
+      await expect(response.json(), label).resolves.toEqual({ error: `Method not allowed. Allowed: ${allow}.` });
+    }
   });
 });

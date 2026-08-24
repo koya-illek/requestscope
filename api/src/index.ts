@@ -14,6 +14,18 @@ const REPORT_ID = /^[A-Za-z0-9_-]{16}$/;
 const MAX_REQUEST_BYTES = 8192;
 const RECENT_SCAN_TTL = 300;
 
+/** Known routes with the verbs they accept. A path that matches one of these
+ * patterns with a different verb answers 405 with an Allow header instead of
+ * a generic 404 that misdescribes an existing resource as missing. */
+const ROUTE_METHODS: Array<[RegExp, string]> = [
+  [/^\/api\/?$/, "GET, HEAD, OPTIONS"],
+  [/^\/api\/health$/, "GET, HEAD, OPTIONS"],
+  [/^\/api\/scans$/, "POST, OPTIONS"],
+  [/^\/api\/scans\/stream$/, "POST, OPTIONS"],
+  [/^\/api\/scans\/[A-Za-z0-9_-]+(?:\/export)?$/, "GET, HEAD, OPTIONS"],
+  [/^\/api\/v1\/url-risk$/, "POST, OPTIONS"],
+];
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const response = await routeRequest(request, env, ctx);
@@ -42,6 +54,12 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): 
   }
 
   try {
+    // The first matching route owns the verdict: later, broader patterns
+    // (/api/scans/:id) must not override a specific one (/api/scans/stream).
+    const matchedRoute = ROUTE_METHODS.find(([pattern]) => pattern.test(url.pathname));
+    if (matchedRoute && !matchedRoute[1].split(", ").includes(request.method)) {
+      return json({ error: `Method not allowed. Allowed: ${matchedRoute[1]}.` }, 405, { ...cors, Allow: matchedRoute[1] });
+    }
     if ((url.pathname === "/api" || url.pathname === "/api/") && isRead) {
       return json({
         service: "RequestScope API",
