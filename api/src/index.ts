@@ -530,11 +530,18 @@ async function loadReport(db: D1Database, id: string): Promise<ScanReport | null
 
 async function cleanExpired(db: D1Database): Promise<void> {
   const today = new Date().toISOString();
-  await db.batch([
+  const results = await db.batch([
     db.prepare("DELETE FROM scans WHERE expires_at <= ?").bind(today),
-    db.prepare("DELETE FROM rate_limits WHERE window_date < date('now', '-2 day')"),
-    db.prepare("DELETE FROM provider_usage WHERE updated_at < datetime('now', '-90 day')"),
+    db.prepare("DELETE FROM rate_limits WHERE window_date < date('now', '-2 day')").bind(),
+    db.prepare("DELETE FROM provider_usage WHERE updated_at < datetime('now', '-90 day')").bind(),
   ]);
+  // Free operational observability, mirroring scan_completed: deleted-row
+  // counters only, never report contents or identifiers.
+  console.log("cleanup_completed", JSON.stringify({
+    expiredReports: results[0]?.meta.changes ?? 0,
+    staleRateLimits: results[1]?.meta.changes ?? 0,
+    staleProviderUsage: results[2]?.meta.changes ?? 0,
+  }));
 }
 
 async function consumeProviderQuota(env: Env, provider: ReputationProviderName): Promise<boolean> {

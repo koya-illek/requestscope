@@ -446,7 +446,11 @@ describe("scheduled retention cleanup", () => {
       statements.push(statement);
       return statement;
     });
-    const batch = vi.fn(async () => []);
+    const batch = vi.fn(async () => [
+      { meta: { changes: 3 } },
+      { meta: { changes: 12 } },
+      { meta: { changes: 1 } },
+    ] as D1Result[]);
     const db = { prepare, batch } as unknown as D1Database;
     const pending: Promise<unknown>[] = [];
     const scheduledContext = {
@@ -456,10 +460,15 @@ describe("scheduled retention cleanup", () => {
       passThroughOnException() {},
       props: {},
     } as unknown as ExecutionContext;
+    const logged: string[] = [];
+    const logSpy = vi.spyOn(console, "log").mockImplementation((...parts: unknown[]) => {
+      logged.push(parts.map((part) => String(part)).join(" "));
+    });
 
     await worker.scheduled({} as ScheduledController, { ...env, DB: db }, scheduledContext);
     expect(pending).toHaveLength(1);
     await Promise.all(pending);
+    logSpy.mockRestore();
 
     expect(batch).toHaveBeenCalledOnce();
     expect(batch).toHaveBeenCalledWith(statements);
@@ -469,6 +478,10 @@ describe("scheduled retention cleanup", () => {
     expect(prepare).toHaveBeenCalledTimes(3);
     expect(prepare.mock.calls[1][0]).toMatch(/DELETE FROM rate_limits WHERE window_date < date\('now', '-2 day'\)/);
     expect(prepare.mock.calls[2][0]).toMatch(/DELETE FROM provider_usage WHERE updated_at < datetime\('now', '-90 day'\)/);
+    // Free observability with the same hygiene contract as scan_completed:
+    // deleted-row counters only, never report contents or identifiers.
+    const completion = logged.find((line) => line.startsWith("cleanup_completed"));
+    expect(completion).toBe('cleanup_completed {"expiredReports":3,"staleRateLimits":12,"staleProviderUsage":1}');
   });
 });
 
