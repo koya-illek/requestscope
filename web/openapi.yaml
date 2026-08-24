@@ -186,6 +186,7 @@ components:
       properties:
         url: { type: string, format: uri, maxLength: 2048 }
         mapDependencies: { type: boolean, default: false, description: Inspect bounded page dependencies and relationships. The web UI explicitly enables this for its full map view. }
+        mobileUserAgent: { type: boolean, default: false, description: Request the target as mobile Safari instead of the RequestScope identity. Some sites serve different content per device; report.observation.deviceProfile records which profile ran. The observer stays at the Cloudflare edge either way. }
         claimedOrganisation: { type: string, maxLength: 120, description: Organisation the surrounding message claims to represent, used by the URL-risk assessment included in the trace. }
         messageContext: { type: string, maxLength: 1000, description: Brief non-sensitive context such as Password reset email. }
         externalReputation: { type: boolean, default: false, description: Set true only after the user agrees that the original and final URL including query values may be sent to Google Web Risk and PhishTank; Cloudflare's malware-filtering DNS receives hostnames only. }
@@ -301,6 +302,10 @@ components:
           type: string
           format: uri
           maxLength: 2048
+        mobileUserAgent:
+          type: boolean
+          default: false
+          description: Request the target as mobile Safari instead of the RequestScope identity, exposing device-specific content. The report records which profile was used.
         claimedOrganisation:
           type: string
           maxLength: 120

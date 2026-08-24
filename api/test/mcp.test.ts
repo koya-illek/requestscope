@@ -41,6 +41,7 @@ describe("MCP Streamable HTTP endpoint", () => {
       claimedOrganisation: expect.any(Object),
       messageContext: expect.any(Object),
       externalReputation: expect.any(Object),
+      mobileUserAgent: expect.any(Object),
     });
     const riskOutput = body.result.tools.find(tool => tool.name === "assess_url_risk") as {
       outputSchema: { properties: { reputation: { properties: { providers: { items: { properties: { provider: { enum: string[] } } } } } } } };
@@ -73,6 +74,22 @@ describe("MCP Streamable HTTP endpoint", () => {
       arguments: { url: "https://example.com", externalReputation: "yes" },
     }), async () => assessment);
     await expect(response.json()).resolves.toMatchObject({ error: { code: -32602, message: "externalReputation must be a boolean" } });
+  });
+
+  it("passes the mobile observation profile through to the engine", async () => {
+    const execute = vi.fn(async () => assessment);
+    const response = await handleMcp(request("tools/call", {
+      name: "trace_request",
+      arguments: { url: "https://example.com", mobileUserAgent: true },
+    }), execute);
+    await expect(response.json()).resolves.toMatchObject({ result: { isError: false } });
+    expect(execute).toHaveBeenCalledWith("trace_request", expect.objectContaining({ mobileUserAgent: true }), expect.any(Function));
+
+    const invalid = await handleMcp(request("tools/call", {
+      name: "assess_url_risk",
+      arguments: { url: "https://example.com", mobileUserAgent: "iPhone" },
+    }), async () => assessment);
+    await expect(invalid.json()).resolves.toMatchObject({ error: { code: -32602, message: "mobileUserAgent must be a boolean" } });
   });
 
   it("enforces bounded risk context for full traces", async () => {

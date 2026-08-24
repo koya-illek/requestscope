@@ -149,9 +149,9 @@ function toolRequestError(params: unknown): { code: number; message: string } | 
   const { name, args } = parsedToolCall(params);
   if (!["trace_request", "assess_url_risk", "get_requestscope_report"].includes(name)) return { code: -32602, message: "Unknown tool name" };
   const allowedArguments = name === "trace_request"
-    ? ["url", "mapDependencies", "claimedOrganisation", "messageContext", "externalReputation"]
+    ? ["url", "mapDependencies", "claimedOrganisation", "messageContext", "externalReputation", "mobileUserAgent"]
     : name === "assess_url_risk"
-      ? ["url", "claimedOrganisation", "messageContext", "externalReputation"]
+      ? ["url", "claimedOrganisation", "messageContext", "externalReputation", "mobileUserAgent"]
       : ["reportId"];
   const unknownArgument = Object.keys(args).find((argument) => !allowedArguments.includes(argument));
   if (unknownArgument) return { code: -32602, message: `Unsupported argument: ${unknownArgument}` };
@@ -165,6 +165,7 @@ function toolRequestError(params: unknown): { code: number; message: string } | 
   if (typeof args.messageContext === "string" && args.messageContext.length > 1000) return { code: -32602, message: "messageContext is too long" };
   if (args.mapDependencies !== undefined && typeof args.mapDependencies !== "boolean") return { code: -32602, message: "mapDependencies must be a boolean" };
   if (args.externalReputation !== undefined && typeof args.externalReputation !== "boolean") return { code: -32602, message: "externalReputation must be a boolean" };
+  if (args.mobileUserAgent !== undefined && typeof args.mobileUserAgent !== "boolean") return { code: -32602, message: "mobileUserAgent must be a boolean" };
   return null;
 }
 
@@ -271,6 +272,7 @@ function traceTool() {
     inputSchema: { type: "object", additionalProperties: false, required: ["url"], properties: {
       url: { type: "string", maxLength: 2048, description: "Public HTTP or HTTPS URL." },
       mapDependencies: { type: "boolean", default: true, description: "Inspect bounded page dependencies and their relationships." },
+      mobileUserAgent: { type: "boolean", default: false, description: "Request the target as mobile Safari instead of the RequestScope identity. Some sites serve different content per device; the report records which profile was used. The observer stays at the Cloudflare edge either way." },
       claimedOrganisation: { type: "string", maxLength: 120, description: "Organisation the surrounding message claims to represent, used by the URL-risk assessment included in the trace." },
       messageContext: { type: "string", maxLength: 1000, description: "Brief non-sensitive context, for example Password reset email." },
       externalReputation: { type: "boolean", default: false, description: "After user approval, send the original and final URL, including query values, to Google Web Risk and PhishTank; Cloudflare's malware-filtering DNS receives hostnames only. Never enable for private or token-bearing URLs." },
@@ -318,6 +320,7 @@ function riskTool() {
       required: ["url"],
       properties: {
         url: { type: "string", maxLength: 2048, description: "Public HTTP or HTTPS URL to trace and assess." },
+        mobileUserAgent: { type: "boolean", default: false, description: "Request the target as mobile Safari instead of the RequestScope identity, exposing device-specific content. The report records which profile was used." },
         claimedOrganisation: { type: "string", maxLength: 120, description: "Organisation the surrounding message claims to represent." },
         messageContext: { type: "string", maxLength: 1000, description: "Brief non-sensitive context, for example Password reset email." },
         externalReputation: { type: "boolean", default: false, description: "Set true only after the user agrees that the original and final URL, including query values, may be sent to Google Web Risk and PhishTank; Cloudflare's malware-filtering DNS receives hostnames only." },

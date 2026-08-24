@@ -9,6 +9,7 @@ import {
 } from "./security";
 import type { Env, ReputationProviderName, ScanReport } from "./types";
 import { handleMcp } from "./mcp";
+import type { DeviceProfile } from "./device-profile";
 import { API_VERSION } from "./version";
 
 const REPORT_ID = /^[A-Za-z0-9_-]{16}$/;
@@ -146,6 +147,7 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): 
           claimedOrganisation: args.claimedOrganisation as string | undefined,
           messageContext: args.messageContext as string | undefined,
           externalReputation: args.externalReputation === true,
+          mobileUserAgent: args.mobileUserAgent === true,
         };
         // Analyzer stage events double as MCP progress notifications for
         // clients that asked for a progressToken.
@@ -201,6 +203,7 @@ interface ScanInput {
   claimedOrganisation?: string;
   messageContext?: string;
   externalReputation?: boolean;
+  mobileUserAgent?: boolean;
 }
 
 interface RiskInput {
@@ -208,6 +211,7 @@ interface RiskInput {
   claimedOrganisation?: string;
   messageContext?: string;
   externalReputation?: boolean;
+  mobileUserAgent?: boolean;
 }
 
 async function authorizedRiskRequest(request: Request, env: Env): Promise<boolean> {
@@ -236,7 +240,7 @@ function rejectUnknownFields(body: Record<string, unknown>, allowed: string[]): 
 
 async function readScanInput(request: Request): Promise<ScanInput> {
   const body = await readJsonObject(request);
-  rejectUnknownFields(body, ["url", "mapDependencies", "externalReputation", "claimedOrganisation", "messageContext"]);
+  rejectUnknownFields(body, ["url", "mapDependencies", "externalReputation", "claimedOrganisation", "messageContext", "mobileUserAgent"]);
   if (typeof body.url !== "string") throw new InputError("A URL is required.");
   if (body.mapDependencies !== undefined && typeof body.mapDependencies !== "boolean") {
     throw new InputError("mapDependencies must be a boolean.");
@@ -244,23 +248,30 @@ async function readScanInput(request: Request): Promise<ScanInput> {
   if (body.externalReputation !== undefined && typeof body.externalReputation !== "boolean") {
     throw new InputError("externalReputation must be a boolean.");
   }
+  if (body.mobileUserAgent !== undefined && typeof body.mobileUserAgent !== "boolean") {
+    throw new InputError("mobileUserAgent must be a boolean.");
+  }
   const context = readRiskContext(body);
   return {
     url: body.url,
     mapDependencies: body.mapDependencies === true,
     externalReputation: body.externalReputation === true,
+    mobileUserAgent: body.mobileUserAgent === true,
     ...context,
   };
 }
 
 async function readRiskInput(request: Request): Promise<RiskInput> {
   const body = await readJsonObject(request);
-  rejectUnknownFields(body, ["url", "externalReputation", "claimedOrganisation", "messageContext"]);
+  rejectUnknownFields(body, ["url", "externalReputation", "claimedOrganisation", "messageContext", "mobileUserAgent"]);
   if (typeof body.url !== "string") throw new InputError("A URL is required.");
   if (body.externalReputation !== undefined && typeof body.externalReputation !== "boolean") {
     throw new InputError("externalReputation must be a boolean.");
   }
-  return { url: body.url, externalReputation: body.externalReputation === true, ...readRiskContext(body) };
+  if (body.mobileUserAgent !== undefined && typeof body.mobileUserAgent !== "boolean") {
+    throw new InputError("mobileUserAgent must be a boolean.");
+  }
+  return { url: body.url, externalReputation: body.externalReputation === true, mobileUserAgent: body.mobileUserAgent === true, ...readRiskContext(body) };
 }
 
 function readRiskContext(body: Record<string, unknown>): Omit<RiskInput, "url"> {
@@ -330,6 +341,7 @@ async function createScan(
     normalized.toString(),
     Boolean(input.mapDependencies),
     Boolean(input.externalReputation),
+    Boolean(input.mobileUserAgent),
     input.claimedOrganisation,
     input.messageContext,
   );
@@ -349,6 +361,7 @@ async function createScan(
     sourceRevision: env.SOURCE_REVISION || "uncommitted-source",
   }, onProgress, {
     mapDependencies: input.mapDependencies,
+    deviceProfile: (input.mobileUserAgent ? "mobile" : "desktop") as DeviceProfile,
     riskContext: { claimedOrganisation: input.claimedOrganisation, messageContext: input.messageContext },
     reputation: {
       enabled: input.externalReputation === true,
@@ -440,10 +453,11 @@ async function recentScanCacheKey(
   targetUrl: string,
   mapDeps: boolean,
   externalReputation: boolean,
+  mobileUserAgent: boolean,
   claimed?: string,
   context?: string,
 ): Promise<Request> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${targetUrl}:${mapDeps}:${externalReputation}:${claimed || ""}:${context || ""}`));
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${targetUrl}:${mapDeps}:${externalReputation}:${mobileUserAgent}:${claimed || ""}:${context || ""}`));
   const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
   const base = new URL(requestUrl);
   return new Request(`${base.origin}/__recent_scan/${hash}`, { method: "GET" });

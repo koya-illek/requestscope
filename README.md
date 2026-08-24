@@ -73,6 +73,16 @@ exhausted quotas `429` with `Retry-After`. Only failures discovered mid-trace
 (inconclusive DNS resolution, blocked redirects, budget exhaustion) arrive
 in-band as NDJSON error events.
 
+Traces observe through one of two fixed request identities, selected with the
+boolean `mobileUserAgent` field on `/api/scans`, `/api/scans/stream`,
+`/api/v1/url-risk`, and the MCP trace and risk tools. The default `desktop`
+profile identifies as `RequestScope/1.0 (+https://requestscope.illek.ie)`; the
+`mobile` profile identifies as mobile Safari so device-specific pages can be
+compared — a common cloaking behaviour in phishing kits. The chosen profile is
+recorded as `observation.deviceProfile` in the stored report, and callers can
+never supply a literal User-Agent value. DNS and reputation stages are
+identical under both profiles.
+
 `POST /api/v1/url-risk` is the stable, compact integration contract for
 Microsoft Copilot custom connectors and other automation. It follows redirects
 and returns a low, medium, or high assessment with scored evidence for URL

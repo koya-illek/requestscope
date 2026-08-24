@@ -46,6 +46,7 @@ export async function mapDependencies(
   scriptDeps: Array<{ url: string; host: string }>,
   onProgress: (event: DepsProgress) => void = () => {},
   budget?: RequestBudget,
+  userAgent: string = "RequestScope/1.0 (+https://requestscope.illek.ie)",
 ): Promise<DependencyMap> {
   const started = performance.now();
   const budgetStarted = budget?.snapshot();
@@ -57,7 +58,7 @@ export async function mapDependencies(
   const csp = analyseCsp(responseHeaders["content-security-policy"]);
 
   onProgress({ stage: "deps-js", message: "Scanning JavaScript bundles" });
-  const { analysis: jsBundles, rawJsText } = await scrapeJsBundles(scriptDeps, budget, validatedHosts);
+  const { analysis: jsBundles, rawJsText } = await scrapeJsBundles(scriptDeps, budget, validatedHosts, userAgent);
 
   onProgress({ stage: "deps-ct", message: "Querying Certificate Transparency logs" });
   const certT = await queryCertTransparency(hostname, budget);
@@ -215,7 +216,7 @@ function extractHostFromCspSource(source: string): string | null {
   return CSP_HOST_SHAPE.test(host) ? host : null;
 }
 
-async function scrapeJsBundles(scriptDeps: Array<{ url: string; host: string }>, budget?: RequestBudget, validatedHosts?: Map<string, PublicResolution>): Promise<{ analysis: JsBundleAnalysis; rawJsText: string }> {
+async function scrapeJsBundles(scriptDeps: Array<{ url: string; host: string }>, budget?: RequestBudget, validatedHosts?: Map<string, PublicResolution>, userAgent: string = "RequestScope/1.0 (+https://requestscope.illek.ie)"): Promise<{ analysis: JsBundleAnalysis; rawJsText: string }> {
   const bundles = scriptDeps
     .filter((d) => d.url.match(/\.m?js(?:\?|$)/i) || d.url.match(/\/js\//i))
     .slice(0, MAX_JS_BUNDLES);
@@ -238,7 +239,7 @@ async function scrapeJsBundles(scriptDeps: Array<{ url: string; host: string }>,
       const requestInit = {
         method: "GET",
         cache: "no-store" as RequestCache,
-        headers: { "User-Agent": "RequestScope/1.0 (+https://requestscope.illek.ie)" },
+        headers: { "User-Agent": userAgent },
         signal: AbortSignal.timeout(FETCH_TIMEOUT),
       };
       const response = budget

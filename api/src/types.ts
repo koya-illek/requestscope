@@ -282,6 +282,7 @@ export interface ScanReport {
     vantage: "cloudflare-edge";
     colo?: string;
     country?: string;
+    deviceProfile?: "desktop" | "mobile";
     disclaimer: string;
     sourceRevision?: string;
   };

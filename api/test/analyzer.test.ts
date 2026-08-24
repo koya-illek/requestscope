@@ -81,6 +81,30 @@ describe("analyzeUrl", () => {
     expect(report.dependencies.items[0]?.url).toContain("v=%5Bredacted%5D");
   });
 
+  it("observes through the requested device profile and records it in the report", async () => {
+    const userAgents: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (url.hostname === "cloudflare-dns.com" || url.hostname === "dns.google") return dnsResponse(url);
+      if (url.hostname === "crt.sh") return Response.json([]);
+      userAgents.push(String(new Headers(init?.headers).get("User-Agent")));
+      return new Response('<html><script src="https://cdn.example.net/app.js"></script></html>', {
+        headers: { "Content-Type": "text/html" },
+      });
+    }));
+
+    const mobile = await analyzeUrl("https://example.com", 14, {}, () => {}, { mapDependencies: true, deviceProfile: "mobile" });
+    expect(mobile.observation.deviceProfile).toBe("mobile");
+    // Core hop and dependency bundle requests both carry the mobile identity.
+    expect(userAgents.length).toBeGreaterThanOrEqual(2);
+    expect(userAgents.every((agent) => agent.includes("iPhone"))).toBe(true);
+
+    userAgents.length = 0;
+    const desktop = await analyzeUrl("https://example.com", 14, {}, () => {}, { mapDependencies: true });
+    expect(desktop.observation.deviceProfile).toBe("desktop");
+    expect(userAgents.every((agent) => agent.startsWith("RequestScope/1.0"))).toBe(true);
+  });
+
   it("records one partial hop when a redirect target is blocked", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);

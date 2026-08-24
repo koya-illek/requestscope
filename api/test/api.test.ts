@@ -118,7 +118,7 @@ describe("API routing and input boundary", () => {
     await expect(response.json()).resolves.toEqual({ error: "messageContext is too long." });
   });
 
-  it("requires external reputation consent to be an explicit boolean", async () => {
+  it("rejects non-boolean external reputation consent", async () => {
     const response = await worker.fetch(new Request("https://api.example/api/v1/url-risk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -126,6 +126,55 @@ describe("API routing and input boundary", () => {
     }), env, ctx);
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: "externalReputation must be a boolean." });
+  });
+
+  it("accepts the mobile observation profile on scan and risk boundaries", async () => {
+    const db = { prepare: vi.fn(() => ({
+      bind: vi.fn(() => ({ first: vi.fn(async () => ({ request_count: 1 })) })),
+    })) } as unknown as D1Database;
+    const servedKeys: string[] = [];
+    vi.stubGlobal("caches", {
+      open: vi.fn(async () => ({
+        match: vi.fn(async (key: Request) => {
+          servedKeys.push(key.url);
+          return new Response(JSON.stringify({ id: "profiled-report" }));
+        }),
+      })),
+    });
+    const scan = await worker.fetch(new Request("https://api.example/api/scans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com", mobileUserAgent: true }),
+    }), { ...env, DB: db }, ctx);
+    expect(scan.status).toBe(201);
+
+    const risk = await worker.fetch(new Request("https://api.example/api/v1/url-risk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com", mobileUserAgent: true }),
+    }), { ...env, DB: db }, ctx);
+    expect(risk.status).toBe(200);
+
+    // The recent-result cache is keyed by every observation option: the same
+    // URL without the flag must be a distinct key, never answered by the
+    // stored mobile observation.
+    await worker.fetch(new Request("https://api.example/api/scans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com" }),
+    }), { ...env, DB: db }, ctx);
+    expect(servedKeys[2]).not.toBe(servedKeys[0]);
+    expect(new Set(servedKeys).size).toBe(2);
+  });
+
+  it("rejects non-boolean mobile profile requests by name", async () => {
+    const response = await worker.fetch(new Request("https://api.example/api/scans/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com", mobileUserAgent: "iPhone" }),
+    }), env, ctx);
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "mobileUserAgent must be a boolean." });
   });
 
   it("rejects unknown scan fields instead of silently ignoring them", async () => {

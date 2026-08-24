@@ -14,6 +14,7 @@ import {
 } from "./security";
 import { RequestBudget, BudgetExceededError } from "./budget";
 import { assertPublicTarget, assertResolutionHealthy, uniqueAddresses, type PublicResolution } from "./egress";
+import { USER_AGENTS, type DeviceProfile } from "./device-profile";
 import { API_VERSION } from "./version";
 import type { CoverageStatus, Dependency, DnsQueryResult, PageSecuritySignals, RedirectHop, ScanReport, PhaseCoverage } from "./types";
 
@@ -61,10 +62,12 @@ export async function analyzeUrl(
   retentionDays: number,
   observer: { colo?: string; country?: string; sourceRevision?: string } = {},
   onProgress: (event: AnalyzerProgress) => void = () => {},
-  options: { mapDependencies?: boolean; riskContext?: UrlRiskContext; reputation?: ReputationConfig; budget?: RequestBudget } = {},
+  options: { mapDependencies?: boolean; riskContext?: UrlRiskContext; reputation?: ReputationConfig; budget?: RequestBudget; deviceProfile?: DeviceProfile } = {},
 ): Promise<ScanReport> {
   const started = performance.now();
   const budget = options.budget || new RequestBudget();
+  const deviceProfile: DeviceProfile = options.deviceProfile ?? "desktop";
+  const userAgent = USER_AGENTS[deviceProfile];
   const scanBudgetStart = budget.snapshot();
   const initial = normalizeUrl(rawUrl);
   onProgress({ stage: "validated", message: `Validated ${initial.hostname}` });
@@ -108,7 +111,7 @@ export async function analyzeUrl(
         cache: "no-store",
         headers: {
           Accept: "text/html,application/xhtml+xml,application/json;q=0.8,*/*;q=0.5",
-          "User-Agent": "RequestScope/1.0 (+https://requestscope.illek.ie)",
+          "User-Agent": userAgent,
         },
         signal: AbortSignal.timeout(10_000),
         resource: "http",
@@ -218,6 +221,7 @@ export async function analyzeUrl(
       vantage: "cloudflare-edge" as const,
       colo: observer.colo || hops.find((hop) => hop.cf.colo)?.cf.colo,
       country: observer.country || hops.find((hop) => hop.cf.country)?.cf.country,
+      deviceProfile,
       disclaimer: "HTTP timings are Cloudflare edge observations, not browser DNS, TCP, TLS, or rendering timings.",
       sourceRevision: observer.sourceRevision,
     },
@@ -255,6 +259,7 @@ export async function analyzeUrl(
       dependenciesRaw.filter((d) => d.type === "script").map((d) => ({ url: d.url, host: d.host })),
       (event) => onProgress({ stage: event.stage as AnalyzerProgress["stage"], message: event.message }),
       budget,
+      userAgent,
     );
   }
   const dependencyBudgetAfter = budget.snapshot();
