@@ -232,12 +232,20 @@ server.close();
 const linkContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
 const linkPage = await linkContext.newPage();
 let savedReportFetches = 0;
+let conditionalHits = 0;
 await linkPage.route("**/api/health", async (route) => {
   await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, reputationProviders: {} }) });
 });
 await linkPage.route("**/api/scans/abcdefghijklmnop*", async (route) => {
+  // Stored reports are immutable, so a repeat load that echoes the strong
+  // ETag is answered with 304 and no evidence body.
+  if (route.request().headers()["if-none-match"] === '"abcdefghijklmnop"') {
+    conditionalHits += 1;
+    await route.fulfill({ status: 304, headers: { ETag: '"abcdefghijklmnop"' } });
+    return;
+  }
   savedReportFetches += 1;
-  await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(report) });
+  await route.fulfill({ status: 200, contentType: "application/json", headers: { ETag: '"abcdefghijklmnop"' }, body: JSON.stringify(report) });
 });
 await linkPage.goto(`${pathToFileURL(path.resolve(webRoot, "index.html")).href}#abcdefghijklmnop`);
 await linkPage.waitForSelector("#risk-verdict.high", { state: "visible" });
@@ -248,6 +256,16 @@ assert.equal(savedReportFetches, 1);
 assert.equal(await linkPage.title(), "micros0ft.example: RequestScope");
 assert.equal(await linkPage.evaluate(() => document.activeElement?.id), "report-host");
 assert.equal(await linkPage.evaluate(() => location.hash), "#abcdefghijklmnop");
+
+// Leaving and returning to the same share link inside one session must
+// revalidate the immutable report instead of downloading it twice.
+await linkPage.evaluate(() => { location.hash = ""; });
+await linkPage.waitForSelector("#report.hidden", { state: "attached" });
+await linkPage.evaluate(() => { location.hash = "abcdefghijklmnop"; });
+await linkPage.waitForSelector("#risk-verdict.high", { state: "visible" });
+assert.equal(await linkPage.textContent("#risk-verdict"), "HIGH · 66/100", "the 304 path must still render the stored report");
+assert.equal(conditionalHits, 1, "the repeat load must send If-None-Match and receive 304");
+assert.equal(savedReportFetches, 1, "the evidence body must be downloaded once per session");
 
 // Regression: with no reputation provider configured, the health check must
 // disable the consent checkbox and replace its copy instead of letting the

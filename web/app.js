@@ -10,6 +10,13 @@
   const IDLE_TIMEOUT_MS = 45_000;
   const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
+  // Stored reports are immutable and the API publishes each report ID as a
+  // strong ETag, so a repeat load inside one session revalidates with
+  // If-None-Match instead of re-downloading the whole evidence body. This
+  // lives in memory only; nothing about the visit is persisted.
+  const reportCache = new Map();
+  const REPORT_CACHE_LIMIT = 5;
+
   let inFlight = false;
   let cancelRequested = false;
   let activeController = null;
@@ -239,8 +246,18 @@
     };
     armIdleTimer();
     try {
-      const response = await fetch(`${API_BASE}/api/scans/${encodeURIComponent(id)}`, { signal: controller.signal });
+      const cached = reportCache.get(id);
+      const response = await fetch(`${API_BASE}/api/scans/${encodeURIComponent(id)}`, {
+        signal: controller.signal,
+        headers: cached ? { "If-None-Match": cached.etag } : {},
+      });
       armIdleTimer();
+      if (response.status === 304 && cached) {
+        // The server confirmed the session copy is still current.
+        finishProgress();
+        displayReport(cached.report, false);
+        return;
+      }
       if (!response.ok) {
         let message = `Saved report could not be loaded (HTTP ${response.status}).`;
         try {
@@ -254,6 +271,14 @@
       const payload = await response.json().catch(() => {
         throw new Error("Received an invalid response from the server.");
       });
+      const etag = response.headers.get("ETag");
+      if (etag) {
+        reportCache.delete(id);
+        reportCache.set(id, { etag, report: payload });
+        while (reportCache.size > REPORT_CACHE_LIMIT) {
+          reportCache.delete(reportCache.keys().next().value);
+        }
+      }
       finishProgress();
       displayReport(payload, false);
     } catch (error) {
