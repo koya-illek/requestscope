@@ -440,4 +440,30 @@ await cancelPage.waitForSelector("#risk-verdict.high", { state: "visible" });
 assert.equal(stallStarted, 2);
 await cancelContext.close();
 
+// Boundary rejections (invalid target, exhausted quota) now arrive as real
+// HTTP statuses with a JSON body before any NDJSON byte; the UI must show
+// that copy instead of a bare "Trace failed with HTTP 429".
+const quotaContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+const quotaPage = await quotaContext.newPage();
+await quotaPage.route("**/api/health", async (route) => {
+  await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, reputationProviders: {} }) });
+});
+await quotaPage.route("**/api/scans/stream", async (route) => {
+  await route.fulfill({
+    status: 429,
+    contentType: "application/json",
+    headers: { "Retry-After": "3600" },
+    body: JSON.stringify({ error: "Daily anonymous scan limit of 15 reached." }),
+  });
+});
+await quotaPage.goto(pathToFileURL(path.resolve(webRoot, "index.html")).href);
+await quotaPage.fill("#url-input", "https://micros0ft.example/login");
+await quotaPage.click("#trace-button");
+await quotaPage.waitForSelector("#error-panel:not(.hidden)");
+assert.equal(await quotaPage.textContent("#error-code"), "RATE_LIMITED");
+assert.equal(await quotaPage.textContent("#error-message"), "Daily anonymous scan limit of 15 reached.");
+assert.equal(await quotaPage.locator("#progress-panel.hidden").count(), 1);
+assert.equal(await quotaPage.locator("#trace-button[disabled]").count(), 0);
+await quotaContext.close();
+
 await browser.close();

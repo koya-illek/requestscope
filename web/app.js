@@ -170,7 +170,19 @@
           messageContext: messageContext.value.trim() || undefined
         })
       });
-      if (!response.ok || !response.body) throw new Error(`Trace failed with HTTP ${response.status}`);
+      if (!response.ok || !response.body) {
+        // The boundary rejects invalid targets and exhausted quotas with a
+        // JSON body before any byte streams; show that copy instead of a
+        // bare HTTP status.
+        let message = `Trace failed with HTTP ${response.status}`;
+        try {
+          const payload = await response.json();
+          if (payload && typeof payload.error === "string") message = payload.error;
+        } catch {
+          // Non-JSON error body; keep the generic HTTP message.
+        }
+        throw Object.assign(new Error(message), { errorCode: response.status === 429 ? "RATE_LIMITED" : "TRACE_FAILED" });
+      }
       const payload = await readTraceStream(response, armIdleTimer);
       finishProgress();
       displayReport(payload, true);
@@ -183,7 +195,7 @@
       } else if (error instanceof TypeError) {
         showError("Network request failed. Check your connection and try again.");
       } else {
-        showError(error.message || "The trace could not be completed.");
+        showError(error.message || "The trace could not be completed.", error.errorCode);
       }
     } finally {
       clearTimeout(idleTimer);
