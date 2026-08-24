@@ -58,6 +58,12 @@ GET  /api/scans/:id/export
 Read endpoints also answer HEAD probes (`curl -I` health checks) with the GET
 headers and no body.
 
+Streamed traces are validated and metered before any byte is streamed: invalid
+targets answer `400`, disallowed origins or non-public targets `403`, and
+exhausted quotas `429` with `Retry-After`. Only failures discovered mid-trace
+(inconclusive DNS resolution, blocked redirects, budget exhaustion) arrive
+in-band as NDJSON error events.
+
 `POST /api/v1/url-risk` is the stable, compact integration contract for
 Microsoft Copilot custom connectors and other automation. It follows redirects
 and returns a low, medium, or high assessment with scored evidence for URL
