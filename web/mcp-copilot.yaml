@@ -2,7 +2,7 @@ swagger: '2.0'
 info:
   title: RequestScope MCP
   description: Full request tracing, DNS and HTTP evidence, dependency mapping, security findings, suspicious-URL risk assessment, and stored-report retrieval. A low risk result is not proof that a URL is safe. Full REST and result schemas are at https://requestscope.illek.ie/openapi.yaml.
-  version: 2.2.0
+  version: 2.3.0
 host: requestscope.illek.ie
 basePath: /
 schemes:

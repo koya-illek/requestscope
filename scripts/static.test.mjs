@@ -80,7 +80,7 @@ test("public shell exposes metadata, keyboard navigation and privacy", async () 
   for (const probe of ["probeRequestScopeApi", "probeRequestScopeHealth", "probeRequestScopeReport", "probeRequestScopeExport"]) {
     assert.ok(openapi.includes(`operationId: ${probe}`), `openapi must document ${probe}`);
   }
-  assert.ok(mcpConnector.includes("version: 2.2.0"));
+  assert.ok(mcpConnector.includes("version: 2.3.0"));
   assert.ok(mcpConnector.includes("trace_request, assess_url_risk, and get_requestscope_report"));
   assert.ok(favicon.includes("RequestScope"));
   assert.ok(appleIcon.includes("RequestScope"));

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: RequestScope URL Risk API
-  version: 1.7.0
+  version: 1.8.0
   description: |
     Evidence-backed URL tracing and phishing-risk assessment for Copilot and automation.
 
