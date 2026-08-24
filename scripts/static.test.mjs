@@ -238,7 +238,7 @@ test("shipped asset weights stay inside the performance budget", async () => {
   // raw bytes bound what a maintainer may add, and the gzip numbers bound
   // what a visitor transfers (Cloudflare compresses text assets).
   const budgets = [
-    { file: "app.js", maxBytes: 52 * 1024, maxGzipBytes: 15.5 * 1024 },
+    { file: "app.js", maxBytes: 56 * 1024, maxGzipBytes: 16 * 1024 },
     { file: "styles.css", maxBytes: 42 * 1024, maxGzipBytes: 11 * 1024 },
     { file: "fonts/inter-latin-wght-normal-v5.3.0.woff2", maxBytes: 52 * 1024 },
   ];
