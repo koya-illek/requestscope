@@ -112,6 +112,15 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 768, height: 102
   // that evidence rather than leaving it only in the JSON export.
   assert.equal(await page.locator("#timeline .hop-evidence").count(), 2);
   assert.equal(await page.textContent("#timeline .hop-evidence summary"), "Response headers 3 recorded");
+  // The page-observation layer the risk engine consumed must be visible:
+  // password field, form count, on-site submission, and matched language.
+  await page.waitForSelector("#page-signals:not(.hidden)");
+  const signals = await page.textContent("#page-signals");
+  assert.match(signals, /Page observation/);
+  assert.match(signals, /1 form detected/);
+  assert.match(signals, /Password field observed/);
+  assert.match(signals, /Forms submit on-site/);
+  assert.match(signals, /Sign-in language/);
   await page.locator("#timeline .hop:first-child .hop-evidence summary").click();
   const redirectHeaders = await page.locator("#timeline .hop:first-child .hop-header dt").allTextContents();
   assert.deepEqual(redirectHeaders, ["location", "server", "cache-control"]);
@@ -407,6 +416,11 @@ const markdown = await radarPage.inputValue("#link-field");
 assert.match(markdown, /^# RequestScope report: micros0ft\.example\n/);
 assert.match(markdown, /\*\*Verdict:\*\* HIGH · 66\/100/);
 assert.match(markdown, /## External reputation/);
+assert.match(markdown, /## Page observation/);
+assert.match(markdown, /- Forms detected: 1/);
+assert.match(markdown, /- Password input observed: yes/);
+assert.match(markdown, /- Any form submits off-site: no/);
+assert.match(markdown, /- Sensitive language: login/);
 assert.match(markdown, /1\. HTTP 302 https:\/\/micros0ft\.example\/login -> https:\/\/micros0ft\.example\/signin \(41ms\)/);
 // A mapped trace must carry its dependency-map evidence into the brief.
 assert.match(markdown, /## External dependency map/);

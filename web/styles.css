@@ -362,6 +362,13 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .dns-answer { display: grid; grid-template-columns: 52px 1fr auto; gap: 12px; padding: 7px 0; color: var(--muted); font: 400 11px/1.4 var(--mono); }
 .dns-answer code { color: var(--text); overflow-wrap: anywhere; }
 .dns-empty { font: 400 11px/1.4 var(--mono); }
+.page-signals { padding: 16px 20px 18px; border-bottom: 1px solid var(--line); background: rgba(8, 17, 15, .42); }
+.page-signals h4 { margin: 0; color: var(--text); font-size: 12px; }
+.page-signals-note { margin: 4px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.signal-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+.signal-chip { padding: 6px 9px; border: 1px solid var(--line-bright); color: var(--muted); font: 400 10px/1 var(--mono); }
+.signal-chip.warn { border-color: rgba(255, 198, 92, .45); color: var(--warning); }
+.signal-chip.critical { border-color: rgba(255, 98, 110, .5); color: var(--critical); }
 .finding { display: grid; grid-template-columns: 9px 1fr; gap: 14px; padding: 18px 20px; border-bottom: 1px solid var(--line); }
 .finding:last-child { border-bottom: 0; }
 .finding-dot { width: 7px; height: 7px; margin-top: 6px; border-radius: 50%; background: var(--info); }

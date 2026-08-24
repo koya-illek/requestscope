@@ -396,6 +396,7 @@
     renderUrlRisk(report.urlRisk);
     renderTimeline(report.http.hops);
     renderDns(report.dns.queries);
+    renderPageSignals(report.pageSecuritySignals);
     renderFindings(report.findings);
     renderDependencySummary(report.dependencies);
     renderDependencies("all");
@@ -530,6 +531,42 @@
         ${answers}
       </div>`;
     }).join("");
+  }
+
+  /** The page-observation layer the risk engine itself consumes: forms,
+   * password inputs, off-site form targets, and sensitive-action language.
+   * It is captured for every inspectable HTML response, so a report whose
+   * risk findings cite page_observation evidence must show what was actually
+   * observed instead of leaving it in the JSON export. */
+  const SIGNAL_LANGUAGE_LABELS = {
+    login: "Sign-in language",
+    verification: "Verification language",
+    "password-reset": "Password-reset language",
+    payment: "Payment language",
+  };
+
+  function renderPageSignals(signals) {
+    const panel = $("#page-signals");
+    if (!signals) {
+      panel.classList.add("hidden");
+      return;
+    }
+    panel.classList.remove("hidden");
+    const formCount = Number(signals.forms) || 0;
+    const chips = [
+      { text: `${formCount} form${formCount === 1 ? "" : "s"} detected`, tone: "" },
+      { text: signals.passwordForm ? "Password field observed" : "No password field", tone: signals.passwordForm ? "warn" : "" },
+      {
+        text: signals.externalFormAction ? "A form submits off-site" : "Forms submit on-site",
+        tone: signals.externalFormAction ? "critical" : "",
+      },
+      ...(Array.isArray(signals.matchedLanguage) ? signals.matchedLanguage : [])
+        .filter((language) => typeof language === "string" && SIGNAL_LANGUAGE_LABELS[language])
+        .map((language) => ({ text: SIGNAL_LANGUAGE_LABELS[language], tone: "warn" })),
+    ];
+    $("#page-signal-chips").innerHTML = chips.map(({ text, tone }) =>
+      `<span class="signal-chip ${enumToken(tone, ["warn", "critical"])}">${escapeHtml(text)}</span>`
+    ).join("");
   }
 
   function renderFindings(findings) {
@@ -667,6 +704,20 @@
           lines.push(`- ${answer.type} ${query.name} -> ${answer.data} (TTL ${Number(answer.ttl) || 0}s)`);
         }
         if (!query.answers.length) lines.push(`- ${query.type} ${query.name}: ${query.error || `DNS status ${query.status}`}`);
+      }
+      lines.push("");
+    }
+    if (report.pageSecuritySignals) {
+      const signals = report.pageSecuritySignals;
+      lines.push(
+        "## Page observation",
+        "",
+        `- Forms detected: ${Number(signals.forms) || 0}`,
+        `- Password input observed: ${signals.passwordForm ? "yes" : "no"}`,
+        `- Any form submits off-site: ${signals.externalFormAction ? "yes" : "no"}`,
+      );
+      if (Array.isArray(signals.matchedLanguage) && signals.matchedLanguage.length) {
+        lines.push(`- Sensitive language: ${signals.matchedLanguage.join(", ")}`);
       }
       lines.push("");
     }
