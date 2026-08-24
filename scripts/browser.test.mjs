@@ -19,7 +19,7 @@ const report = {
   createdAt: new Date().toISOString(),
   expiresAt: new Date(Date.now() + 86400000).toISOString(),
   totalDurationMs: 143,
-  observation: { vantage: "cloudflare-edge", colo: "DUB", country: "IE", disclaimer: "Edge observation." },
+  observation: { vantage: "cloudflare-edge", colo: "DUB", country: "IE", deviceProfile: "mobile", disclaimer: "Edge observation." },
   dns: { queries: [], addresses: ["93.184.216.34"], dnssecAuthenticated: false },
   http: {
     hops: [
@@ -87,8 +87,11 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 768, height: 102
   const context = await browser.newContext({ viewport });
   const page = await context.newPage();
   let submittedExternalReputation = false;
+  let submittedMobileUserAgent = false;
   await page.route("**/api/scans/stream", async (route) => {
-    submittedExternalReputation = route.request().postDataJSON().externalReputation === true;
+    const payload = route.request().postDataJSON();
+    submittedExternalReputation = payload.externalReputation === true;
+    submittedMobileUserAgent = payload.mobileUserAgent === true;
     const events = ["accepted", "validated", "dns", "hop", "response", "deps-complete", "reputation", "complete"]
       .map((stage) => JSON.stringify({ type: "progress", stage, message: `Stage ${stage}` }));
     const body = `${events.join("\n")}\n${JSON.stringify({ type: "result", report })}\n`;
@@ -102,11 +105,13 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 768, height: 102
   await page.fill("#message-context", "Password reset email");
   await page.check("#map-deps");
   await page.check("#external-reputation");
+  await page.check("#mobile-user-agent");
   await page.click("#trace-button");
   await page.waitForSelector("#risk-verdict.high", { state: "visible" });
   assert.equal(await page.textContent("#risk-verdict"), "HIGH · 66/100");
   assert.equal(await page.locator(".risk-finding").count(), 2);
   assert.equal(submittedExternalReputation, true);
+  assert.equal(submittedMobileUserAgent, true);
   assert.deepEqual(await page.locator("#progress-steps li").allTextContents(), [
     "Validate target", "Resolve DNS", "Follow redirects", "Inspect page", "Map dependencies", "Check reputation", "Build report"
   ]);
@@ -136,6 +141,9 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 768, height: 102
   // them for readers instead of surfacing raw tokens like "unavailable".
   const observationNote = await page.textContent("#observation-note");
   assert.match(observationNote, /Coverage: core trace complete, dependency map could not run, reputation checks not requested\./);
+  // The report records the observation identity it actually used, so a
+  // desktop and a mobile trace of the same URL are distinguishable.
+  assert.match(observationNote, /The page was requested with a mobile Safari user agent\./);
   // A derived finding's evidence citation must be a working link to the
   // captured evidence: activating it opens the cited hop's header list and
   // flashes the exact row, instead of leaving the path as inert text.
@@ -253,12 +261,14 @@ await cspPage.locator(".trace-options > summary").click();
 await cspPage.locator(".risk-context > summary").click();
 await cspPage.fill("#claimed-organisation", "Microsoft");
 await cspPage.check("#map-deps");
+await cspPage.check("#mobile-user-agent");
 await cspPage.click("#trace-button");
 await cspPage.waitForSelector("#report:not(.hidden)");
 await cspPage.click("#new-trace");
 assert.equal(await cspPage.inputValue("#claimed-organisation"), "");
 assert.equal(await cspPage.isChecked("#map-deps"), false);
 assert.equal(await cspPage.isChecked("#external-reputation"), false);
+assert.equal(await cspPage.isChecked("#mobile-user-agent"), false);
 assert.equal(await cspPage.textContent("#trace-options-state"), "Optional");
 
 // With clipboard access granted, Copy as Markdown must write the brief
@@ -271,8 +281,9 @@ await cspPage.click("#copy-markdown");
 await cspPage.waitForFunction(() => document.querySelector("#copy-markdown")?.textContent === "Copied");
 const clipboardMarkdown = await cspPage.evaluate(() => navigator.clipboard.readText());
 assert.match(clipboardMarkdown, /^# RequestScope report: micros0ft\.example/);
-assert.match(clipboardMarkdown, /\*\*Verdict:\*\* HIGH · 66\/100 \(high confidence\)/);
-assert.match(clipboardMarkdown, /## Request path/);
+  assert.match(clipboardMarkdown, /\*\*Verdict:\*\* HIGH · 66\/100 \(high confidence\)/);
+  assert.match(clipboardMarkdown, /## Request path/);
+  assert.match(clipboardMarkdown, /Requested with the mobile Safari user agent profile\./);
 await cspContext.close();
 server.close();
 

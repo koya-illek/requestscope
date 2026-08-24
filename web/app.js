@@ -26,6 +26,7 @@
   const traceButton = $("#trace-button");
   const mapDepsCheckbox = $("#map-deps");
   const externalReputationCheckbox = $("#external-reputation");
+  const mobileUserAgentCheckbox = $("#mobile-user-agent");
   const claimedOrganisation = $("#claimed-organisation");
   const messageContext = $("#message-context");
   const progressPanel = $("#progress-panel");
@@ -52,7 +53,7 @@
     input.setCustomValidity("");
     updateQueryWarning();
   });
-  [mapDepsCheckbox, externalReputationCheckbox].forEach((control) =>
+  [mapDepsCheckbox, externalReputationCheckbox, mobileUserAgentCheckbox].forEach((control) =>
     control?.addEventListener("change", updateAdvancedOptionState)
   );
   [claimedOrganisation, messageContext].forEach((control) =>
@@ -137,6 +138,7 @@
   function updateAdvancedOptionState() {
     const selected = Number(Boolean(mapDepsCheckbox?.checked))
       + Number(Boolean(externalReputationCheckbox?.checked))
+      + Number(Boolean(mobileUserAgentCheckbox?.checked))
       + Number(Boolean(claimedOrganisation?.value.trim() || messageContext?.value.trim()));
     $("#trace-options-state").textContent = selected ? `${selected} selected` : "Optional";
   }
@@ -191,6 +193,7 @@
           url: url.trim(),
           mapDependencies: mapDepsCheckbox.checked,
           externalReputation: externalReputationCheckbox.checked,
+          mobileUserAgent: mobileUserAgentCheckbox.checked,
           claimedOrganisation: claimedOrganisation.value.trim() || undefined,
           messageContext: messageContext.value.trim() || undefined
         })
@@ -391,7 +394,12 @@
     const coverageText = coverage
       ? ` Coverage: core trace ${coveragePhrase(coverage.phases.core.status)}, dependency map ${coveragePhrase(coverage.phases.dependencies.status)}, reputation checks ${coveragePhrase(coverage.phases.reputation.status)}.`
       : "";
-    $("#observation-note").textContent = `${report.observation.disclaimer}${vantage ? ` This trace executed through ${vantage}.` : ""}${coverageText}`;
+    // The observation identity is part of the evidence: a reader comparing a
+    // desktop and a mobile trace must see which profile produced each.
+    const profileText = report.observation.deviceProfile === "mobile"
+      ? " The page was requested with a mobile Safari user agent."
+      : "";
+    $("#observation-note").textContent = `${report.observation.disclaimer}${vantage ? ` This trace executed through ${vantage}.` : ""}${profileText}${coverageText}`;
     const storedUntil = storedUntilText(report.expiresAt);
     const storedNote = $("#report-stored");
     // A share recipient must know how long the evidence stays retrievable
@@ -769,6 +777,9 @@
       const status = Number.isFinite(hop.status) && hop.status !== 0 ? hop.status : "ERR";
       lines.push(`${index + 1}. HTTP ${status} ${hop.url}${hop.location ? ` -> ${hop.location}` : ""} (${formatMs(hop.elapsedMs)})`);
     });
+    if (report.observation.deviceProfile === "mobile") {
+      lines.push("Requested with the mobile Safari user agent profile.");
+    }
     lines.push("");
     if (report.dns.queries.length) {
       lines.push("## DNS observations", "");
@@ -912,6 +923,7 @@
     messageContext.value = "";
     mapDepsCheckbox.checked = false;
     externalReputationCheckbox.checked = false;
+    if (mobileUserAgentCheckbox) mobileUserAgentCheckbox.checked = false;
     updateAdvancedOptionState();
     updateQueryWarning();
     input.focus();

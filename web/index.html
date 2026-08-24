@@ -79,6 +79,13 @@
                 <small>CSP analysis · bounded JS bundle scan · Certificate Transparency history. Optional stages stop at the request budget.</small>
               </span>
             </label>
+            <label class="deps-toggle mobile-ua-toggle">
+              <input type="checkbox" id="mobile-user-agent" name="mobileUserAgent">
+              <span class="deps-toggle-text">
+                <strong>Request as a mobile browser</strong>
+                <small>Sends a mobile Safari user agent so device-specific pages can be compared. DNS and reputation stages are unchanged.</small>
+              </span>
+            </label>
             <label class="deps-toggle reputation-toggle">
               <input type="checkbox" id="external-reputation" name="externalReputation">
               <span class="deps-toggle-text" id="reputation-toggle-text">
@@ -315,7 +322,7 @@
     <div class="method-list">
       <article><span>SAFE</span><div><h3>Validate the target</h3><p>Only public HTTP/HTTPS targets on standard ports are allowed. Credentials, IP literals, private addresses, and unsafe redirects are rejected.</p></div></article>
       <article><span>DNS</span><div><h3>Resolve and verify</h3><p>Cloudflare and Google DNS-over-HTTPS responses are checked before every request. Displayed records remain DNS observations, not ownership claims.</p></div></article>
-      <article><span>HTTP</span><div><h3>Follow the request path</h3><p>The Worker follows bounded redirects manually and records edge-visible status, headers, TLS metadata, timing, and a limited response body.</p></div></article>
+      <article><span>HTTP</span><div><h3>Follow the request path</h3><p>The Worker follows bounded redirects manually and records edge-visible status, headers, TLS metadata, timing, and a limited response body. An optional profile requests the page as mobile Safari; every report records which identity was used.</p></div></article>
       <article><span>PAGE</span><div><h3>Extract page signals</h3><p>Static HTML is inspected for forms, password fields, resources, and third-party services. RequestScope does not execute page JavaScript or submit forms.</p></div></article>
       <article><span>MAP</span><div><h3>Map optional evidence</h3><p>When selected, CSP, bounded JavaScript, Certificate Transparency, and CNAME evidence are collected under one request budget. Bundle and takeover stages can be partial or skipped.</p></div></article>
       <article><span>REP</span><div><h3>Check reputation with consent</h3><p>Google Web Risk and PhishTank check the original and final URL. Cloudflare's malware-filtering DNS checks their hostnames. Provider misses never mean safe.</p></div></article>

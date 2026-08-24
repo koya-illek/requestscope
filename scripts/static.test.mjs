@@ -207,6 +207,21 @@ test("the page-observation signals are visible in the report and the brief", asy
   assert.ok(styles.includes(".signal-chip"), "styles.css must style the signal chips");
 });
 
+test("the mobile observation profile is opt-in, disclosed on screen and in the brief", async () => {
+  // Device-profile switching exists to expose cloaking; the UI must offer it,
+  // send it, and every mobile report must say which identity observed it.
+  const [html, app] = await Promise.all([read("index.html"), read("app.js")]);
+  assert.match(html, /id="mobile-user-agent" name="mobileUserAgent"/);
+  assert.ok(html.includes("Request as a mobile browser"), "the toggle must describe itself");
+  assert.ok(html.includes("Sends a mobile Safari user agent"), "the toggle must disclose the request identity");
+  assert.match(app, /mobileUserAgent: mobileUserAgentCheckbox\.checked/, "submissions must carry the flag");
+  assert.equal(
+    app.split("\n").filter((line) => line.includes('deviceProfile === "mobile"')).length,
+    2,
+    "screen note and markdown brief must both disclose a mobile observation",
+  );
+});
+
 test("shipped asset weights stay inside the performance budget", async () => {
   // The product ships no build step by design, so the budget is the guard:
   // raw bytes bound what a maintainer may add, and the gzip numbers bound
