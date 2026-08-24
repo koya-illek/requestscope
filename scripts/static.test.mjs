@@ -222,6 +222,17 @@ test("the mobile observation profile is opt-in, disclosed on screen and in the b
   );
 });
 
+test("JSON export verifies the response before it becomes a download", async () => {
+  // A blind anchor download would save an expired report's 404 error body as
+  // requestscope-<id>.json; the flow must fetch, check, then download.
+  const app = await read("app.js");
+  const fn = app.slice(app.indexOf("async function exportJson"), app.indexOf("function openCloudflareScan"));
+  assert.ok(fn.length > 0, "exportJson must remain a named function");
+  assert.match(fn, /await fetch\(/);
+  assert.match(fn, /if \(!response\.ok\)/);
+  assert.match(fn, /createObjectURL/, "the download must come from the verified response body");
+});
+
 test("shipped asset weights stay inside the performance budget", async () => {
   // The product ships no build step by design, so the budget is the guard:
   // raw bytes bound what a maintainer may add, and the gzip numbers bound

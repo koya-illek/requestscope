@@ -582,4 +582,47 @@ assert.equal(await quotaPage.locator("#progress-panel.hidden").count(), 1);
 assert.equal(await quotaPage.locator("#trace-button[disabled]").count(), 0);
 await quotaContext.close();
 
+// The JSON export must verify the response before it becomes a download: an
+// expired report would otherwise save its own 404 error body as
+// requestscope-<id>.json with no other feedback.
+const exportContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+const exportPage = await exportContext.newPage();
+let exportDownloads = 0;
+exportPage.on("download", () => { exportDownloads += 1; });
+await exportPage.route("**/api/health", async (route) => {
+  await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, reputationProviders: {} }) });
+});
+await exportPage.route("**/api/scans/abcdefghijklmnop", async (route) => {
+  await route.fulfill({ status: 200, contentType: "application/json", headers: { ETag: '"abcdefghijklmnop"' }, body: JSON.stringify(report) });
+});
+let exportExpired = true;
+await exportPage.route("**/api/scans/abcdefghijklmnop/export", async (route) => {
+  if (exportExpired) {
+    await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "Report not found or expired" }) });
+    return;
+  }
+  await route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    headers: { "Content-Disposition": 'attachment; filename="requestscope-abcdefghijklmnop.json"' },
+    body: JSON.stringify(report),
+  });
+});
+await exportPage.goto(`${pathToFileURL(path.resolve(webRoot, "index.html")).href}#abcdefghijklmnop`);
+await exportPage.waitForSelector("#risk-verdict.high", { state: "visible" });
+await exportPage.click("#export-json");
+await exportPage.waitForSelector("#error-panel:not(.hidden)");
+assert.equal(await exportPage.textContent("#error-code"), "EXPORT_FAILED");
+assert.equal(await exportPage.textContent("#error-message"), "Report not found or expired");
+assert.equal(exportDownloads, 0, "a failed export must not save an error body as a file");
+
+const downloadPromise = exportPage.waitForEvent("download");
+exportExpired = false;
+await exportPage.click("#export-json");
+const download = await downloadPromise;
+assert.equal(download.suggestedFilename(), "requestscope-abcdefghijklmnop.json");
+await download.cancel();
+assert.equal(exportDownloads, 1, "the verified response becomes exactly one download");
+await exportContext.close();
+
 await browser.close();

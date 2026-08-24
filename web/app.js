@@ -888,13 +888,40 @@
     field.select();
   }
 
-  function exportJson() {
+  /** The download is built from a verified response: pointing the anchor at
+   * the endpoint directly would save an expired report's 404 error body as
+   * requestscope-<id>.json with no other feedback. */
+  async function exportJson() {
     if (!state.report) return;
-    flashButton($("#export-json"), "Export started");
-    const anchor = document.createElement("a");
-    anchor.href = `${API_BASE}/api/scans/${encodeURIComponent(state.report.id)}/export`;
-    anchor.download = `requestscope-${state.report.id}.json`;
-    anchor.click();
+    const button = $("#export-json");
+    flashButton(button, "Preparing…");
+    try {
+      const response = await fetch(`${API_BASE}/api/scans/${encodeURIComponent(state.report.id)}/export`);
+      if (!response.ok) {
+        let message = `The report could not be exported (HTTP ${response.status}).`;
+        try {
+          const payload = await response.json();
+          if (payload && typeof payload.error === "string") message = payload.error;
+        } catch {
+          // Non-JSON error body; keep the generic HTTP message.
+        }
+        throw new Error(message);
+      }
+      const blob = await response.blob();
+      const anchor = document.createElement("a");
+      anchor.href = URL.createObjectURL(blob);
+      anchor.download = `requestscope-${state.report.id}.json`;
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(anchor.href), 10_000);
+      flashButton(button, "Exported");
+    } catch (error) {
+      flashButton(button, "Export failed");
+      if (error instanceof TypeError) {
+        showError("Network request failed. Check your connection and try again.", "EXPORT_FAILED");
+      } else {
+        showError(error.message || "The report could not be exported.", "EXPORT_FAILED");
+      }
+    }
   }
 
   function openCloudflareScan() {
