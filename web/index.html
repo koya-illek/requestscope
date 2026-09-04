@@ -163,16 +163,21 @@
           <a id="report-url" href="#" target="_blank" rel="noopener noreferrer"></a>
           <p class="report-stored hidden" id="report-stored"></p>
         </div>
-        <div class="report-actions">
-          <button class="secondary-button" id="copy-link" type="button" aria-live="polite">Copy share link</button>
-          <button class="secondary-button" id="copy-markdown" type="button" aria-live="polite">Copy as Markdown</button>
-          <button class="secondary-button" id="export-json" type="button" aria-live="polite">Export JSON</button>
-          <button class="secondary-button" id="cloudflare-scan" type="button">Scan on Cloudflare Radar</button>
-          <button class="icon-button" id="new-trace" type="button" aria-label="Start a new trace">+</button>
-        </div>
+
       </header>
 
       <div class="metrics" id="metrics"></div>
+
+
+
+      <div class="section-heading">
+        <div>
+          <span class="section-number">01</span>
+          <div><h3>Request path</h3><p>Every HTTP response observed from the edge</p></div>
+        </div>
+        <span class="evidence-badge">EDGE HTTP OBSERVATION</span>
+      </div>
+      <div class="timeline" id="timeline"></div>
 
       <section class="panel risk-panel" id="risk-panel">
         <div class="panel-header">
@@ -185,14 +190,16 @@
         <p class="risk-boundary" id="risk-boundary"></p>
       </section>
 
-      <div class="section-heading">
-        <div>
-          <span class="section-number">01</span>
-          <div><h3>Request path</h3><p>Every HTTP response observed from the edge</p></div>
+        <div class="report-actions">
+          <button class="secondary-button" id="copy-link" type="button" aria-live="polite">Share report</button>
+          <details class="export-menu"><summary>Export report</summary><div class="export-options">
+          <button class="secondary-button" id="copy-markdown" type="button" aria-live="polite">Copy as Markdown</button>
+          <button class="secondary-button" id="export-json" type="button" aria-live="polite">Export JSON</button>
+          </div></details>
+          <button class="secondary-button" id="cloudflare-scan" type="button">Scan on Cloudflare Radar</button>
+          <button class="secondary-button" id="new-trace" type="button" aria-label="Start a new trace">New trace</button>
         </div>
-        <span class="evidence-badge">EDGE HTTP OBSERVATION</span>
-      </div>
-      <div class="timeline" id="timeline"></div>
+      <p class="report-share-note">Anyone with a report link can view it until it expires. Share it only with intended recipients.</p>
 
       <div class="report-grid">
         <section class="panel">
@@ -279,15 +286,18 @@
     </section>
 
     <section class="principles" id="status">
+      <details class="supporting-details"><summary>How this tool works</summary>
       <h2 class="visually-hidden">Diagnostic principles</h2>
       <div class="principle-grid">
         <article><span>01</span><h3>Observed, not guessed</h3><p>Every conclusion points back to captured DNS or HTTP evidence.</p></article>
         <article><span>02</span><h3>Clear boundaries</h3><p>Edge timings are never presented as browser or end-user measurements.</p></article>
         <article><span>03</span><h3>Safe by default</h3><p>Private targets, non-standard ports, and uncontrolled response bodies are blocked.</p></article>
       </div>
+      </details>
     </section>
 
     <section class="developer-access" aria-labelledby="developer-access-title">
+      <details class="supporting-details"><summary>API and integrations</summary>
       <div>
         <h2 id="developer-access-title">Trace and assess URLs from any workflow</h2>
         <p>Run complete request traces, map dependencies, assess suspicious links, and retrieve evidence-backed reports through REST or Streamable HTTP MCP.</p>
@@ -297,13 +307,14 @@
           <li>Opt-in reputation</li>
           <li>Report retrieval</li>
         </ul>
-        <p class="developer-note">Open for testing. Limited daily requests, and repeat scans count even when a recent result is reused.</p>
+        <p class="developer-note">Daily request limits apply, including repeat traces. If you reach a limit, the response tells you when to retry.</p>
       </div>
       <div class="developer-links">
         <a href="./openapi.yaml" type="application/yaml"><span class="developer-link-index">01</span><span><strong>RequestScope REST API</strong><small>OpenAPI contract, schemas and examples</small></span><span class="developer-arrow" aria-hidden="true">↗</span></a>
         <div class="developer-endpoint"><span class="developer-link-index">02</span><span><strong>Streamable HTTP MCP · 3 tools</strong><code>requestscope.illek.ie/mcp/v2</code></span><span class="developer-live">LIVE</span></div>
         <a href="./mcp-copilot.yaml" type="application/yaml"><span class="developer-link-index">03</span><span><strong>Copilot connector</strong><small>Import-ready MCP definition</small></span><span class="developer-arrow" aria-hidden="true">↗</span></a>
       </div>
+      </details>
     </section>
   </main>
 

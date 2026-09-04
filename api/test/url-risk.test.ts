@@ -33,10 +33,14 @@ function report(hostname = "example.com", overrides: Partial<ScanReport> = {}): 
 
 describe("URL risk assessment", () => {
   it("does not call an ordinary URL safe", () => {
-    const result = assessUrlRisk(report(), "https://example.com/");
+    const result = assessUrlRisk(report("example.com", {
+      pageSecuritySignals: { passwordForm: false, forms: 0, externalFormAction: false, matchedLanguage: ["login", "verification"] },
+    }), "https://example.com/");
     expect(result.verdict).toBe("low");
     expect(result.summary).toContain("does not prove");
     expect(result.reputation.status).toBe("not_requested");
+    expect(result.riskScore).toBe(0);
+    expect(result.findings.some((finding) => finding.code === "sensitive-action-language")).toBe(false);
   });
 
   it("detects a claimed-brand lookalike with a password form", () => {
@@ -45,7 +49,7 @@ describe("URL risk assessment", () => {
     });
     const result = assessUrlRisk(target, "https://micros0ft.com/login", { claimedOrganisation: "Microsoft" });
     expect(result.verdict).toBe("high");
-    expect(result.findings.map((finding) => finding.code)).toEqual(expect.arrayContaining(["brand-lookalike", "password-form"]));
+    expect(result.findings.map((finding) => finding.code)).toEqual(expect.arrayContaining(["brand-lookalike", "password-form", "sensitive-action-language"]));
   });
 
   it("downgrades an exact brand name on a plausible sibling TLD instead of hard-flagging it", () => {

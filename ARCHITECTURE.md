@@ -1,5 +1,12 @@
 # RequestScope architecture
 
+## Interface decisions, 2026-09-05
+
+The request path precedes the supporting risk assessment. Generic login and
+verification wording remains an observation; it adds risk only with a lookalike
+domain, external form action, or password form. Exports are grouped, and a
+completed report replaces the input form until the user starts a new trace.
+
 Last reviewed: 2026-08-23
 
 RequestScope is a public URL tracing and risk-assessment service. It observes a URL from a Cloudflare edge location, records bounded DNS and HTTP evidence, derives explainable findings, and returns a privacy-redacted report to a browser, REST client, or MCP agent.

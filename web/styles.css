@@ -870,3 +870,26 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .capability-strip, .site-header .status-link { display: none; }
   .site-header nav { gap: 12px; }
 }
+
+.report-actions { display:flex; flex-wrap:wrap; align-items:flex-start; gap:8px; margin:20px 0 8px; }
+.report-actions button, .export-menu summary { min-height:44px; }
+.export-menu { position:relative; }
+.export-menu summary { display:list-item; cursor:pointer; padding:12px 16px; border:1px solid var(--line); border-radius:4px; font-size:14px; }
+.export-options { display:flex; flex-direction:column; gap:6px; padding:8px 0; }
+.report-observation { margin:12px 0; font-size:14px; }
+.report-observation summary { cursor:pointer; padding:12px 0; min-height:44px; }
+.report-share-note { color:var(--muted); font-size:14px; line-height:1.6; }
+body:has(.report:not(.hidden)) .hero { padding-top:16px; padding-bottom:16px; }
+body:has(.report:not(.hidden)) .hero h1 { font-size:24px; margin-bottom:0; }
+@media(max-width:600px) {
+  .report-actions .secondary-button { flex:0 1 auto; width:auto; min-width:0; font-size:13px; }
+}
+
+body:has(#report:not(.hidden)) #trace-form,
+body:has(#report:not(.hidden)) .hero h1 { display:none; }
+
+.principles, .developer-access { display:block; padding:16px 0; margin-top:20px; }
+.supporting-details > summary { min-height:44px; padding:12px 0; cursor:pointer; font-weight:600; }
+.supporting-details[open] > summary { margin-bottom:20px; }
+.supporting-details .developer-links { margin-top:20px; }
+@media print { .export-menu, .report-actions, .report-share-note { display:none; } }

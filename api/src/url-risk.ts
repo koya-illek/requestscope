@@ -113,7 +113,8 @@ export function assessUrlRisk(
       "The inspected page contains a password input. This is expected on legitimate login pages but increases impact when combined with deceptive-domain indicators.",
       { finalHostname: finalHost }, "high", "page_observation");
   }
-  if (signals && signals.matchedLanguage.length > 0) {
+  if (signals && signals.matchedLanguage.length > 0
+    && findings.some((item) => ["brand-lookalike", "external-form-action", "password-form"].includes(item.code))) {
     const contextMatch = context.messageContext ? matchedContextTerms(context.messageContext) : [];
     add(findings, "sensitive-action-language", "low", 6, "Sensitive action language observed",
       `The page contains language associated with ${signals.matchedLanguage.join(", ")}.`,
