@@ -145,6 +145,8 @@ See `SECURITY.md` for the threat model and operational constraints.
 
 ## Deployment topology
 
+Public target fetches use `global_fetch_strictly_public` so same-zone Worker routes are observed through Cloudflare's public front door. Without it, the observer can bypass the public Worker and receive a different origin response. See [Cloudflare compatibility flags](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#global-fetch-strictly-public).
+
 The production service is one Cloudflare Worker on `requestscope.illek.ie`. The Worker serves the `web/` asset directory and runs first for `/api/*` and `/mcp*`. `workers.dev`, preview URLs, and Cloudflare Pages are disabled. D1 is bound as `DB`, observability is enabled, and the daily cleanup runs at `17 3 * * *` UTC.
 
 ## Non-goals
@@ -152,6 +154,10 @@ The production service is one Cloudflare Worker on `requestscope.illek.ie`. The 
 RequestScope does not execute a full browser, submit forms, authenticate to targets, crawl arbitrary paths, exploit vulnerabilities, scan ports, or provide a binary safety guarantee. Browser screenshots and Cloudflare Radar scans require a separate user-directed workflow.
 
 ## Verification map
+
+Blocked, unsuccessful, partial, and truncated destination observations reduce URL-risk confidence. A low indicator score in those states is displayed as an inspection limit. Error-response headers remain inspectable but do not produce security-policy findings about the intended page.
+
+Tests exercise parser, egress, scoring, API, and browser behaviour. Source-text assertions about CSS, function names, and prose have been removed. Use the affected suite and browser path once per change; retain the asset-size budget.
 
 - Type safety: `npm run typecheck`
 - Unit and contract tests: `npm test`

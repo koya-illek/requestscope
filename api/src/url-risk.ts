@@ -120,8 +120,11 @@ export function assessUrlRisk(
       { pageSignals: signals.matchedLanguage, contextSignals: contextMatch }, "medium", "page_observation");
   }
 
-  if (report.http.finalStatus === null || report.status === "failed") {
-    add(findings, "incomplete-observation", "low", 0, "Destination could not be fully inspected", "A failed or blocked fetch limits the assessment; absence of other findings is not evidence of safety.", { scanStatus: report.status }, "medium");
+  const limitedObservation = report.http.finalStatus === null
+    || report.http.finalStatus < 200 || report.http.finalStatus >= 300
+    || report.status !== "complete" || report.http.truncated;
+  if (limitedObservation) {
+    add(findings, "incomplete-observation", "low", 0, "Destination could not be fully inspected", "A failed, blocked, or partial response limits the assessment. URL structure can still be assessed, but the destination content was not fully inspected.", { scanStatus: report.status, httpStatus: report.http.finalStatus }, "medium");
   }
 
   for (const provider of reputation.providers.filter((item) => item.status === "matched")) {
@@ -166,6 +169,8 @@ export function assessUrlRisk(
     confidence,
     summary: reputation.status === "matched"
       ? "An external reputation provider identifies a checked URL as potentially unsafe. Avoid visiting it or entering information until it is independently verified."
+      : limitedObservation && verdict === "low"
+        ? `Inspection limited${report.http.truncated ? ": response inspection was truncated" : report.http.finalStatus !== null ? `: target returned HTTP ${report.http.finalStatus}` : ": no destination response"}. No strong URL indicators were found, but destination safety is undetermined.`
       : verdict === "low"
         ? "No strong risk indicators were found; this does not prove the URL is safe."
         : `${verdict === "high" ? "Strong" : "Some"} risk indicators were observed. Review the evidence before visiting or entering information.`,

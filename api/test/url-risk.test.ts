@@ -120,11 +120,19 @@ describe("URL risk assessment", () => {
     expect(lookalike?.evidence.matchType).toBe("name-containment");
   });
 
-  it("marks an incomplete observation with medium confidence", () => {
-    const failed = report("example.com", { status: "failed" });
-    const result = assessUrlRisk(failed, "https://example.com/");
-    const incomplete = result.findings.find((finding) => finding.code === "incomplete-observation");
-    expect(incomplete?.confidence).toBe("medium");
+  it("never reassures about a blocked, failed, or truncated destination", () => {
+    const base = report();
+    for (const target of [
+      report("example.com", { status: "failed" }),
+      report("example.com", { http: { ...base.http, finalStatus: 403 } }),
+      report("example.com", { http: { ...base.http, finalStatus: 503 } }),
+      report("example.com", { http: { ...base.http, truncated: true } }),
+    ]) {
+      const result = assessUrlRisk(target, target.requestedUrl);
+      expect(result.confidence).toBe("medium");
+      expect(result.findings.some(f => f.code === "incomplete-observation")).toBe(true);
+      expect(result.summary).toContain("Inspection limited");
+    }
   });
 
   it("does not invent a lookalike finding for an organisation without known domains", () => {

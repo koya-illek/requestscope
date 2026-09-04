@@ -473,8 +473,9 @@
     }
     panel.classList.remove("hidden");
     const verdict = $("#risk-verdict");
-    verdict.textContent = `${String(risk.verdict).toUpperCase()} · ${risk.riskScore}/100`;
-    verdict.className = `risk-verdict ${enumToken(risk.verdict, ["low", "medium", "high"])}`;
+    const limited = risk.findings.some(item => item.code === "incomplete-observation");
+    verdict.textContent = limited && risk.verdict === "low" ? "INSPECTION LIMITED" : `${String(risk.verdict).toUpperCase()} · ${risk.riskScore}/100`;
+    verdict.className = `risk-verdict ${limited && risk.verdict === "low" ? "medium" : enumToken(risk.verdict, ["low", "medium", "high"])}`;
     $("#risk-summary").innerHTML = `<strong>${escapeHtml(risk.summary)}</strong><span>${escapeHtml(risk.confidence)} confidence · ${risk.findings.length} evidence item${risk.findings.length === 1 ? "" : "s"}</span>`;
     renderReputation(risk.reputation);
     $("#risk-findings").innerHTML = risk.findings.length

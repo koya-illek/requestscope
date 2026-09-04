@@ -1,6 +1,8 @@
 name = "requestscope-api"
 main = "src/index.ts"
 compatibility_date = "2026-07-23"
+# Observe public Worker routes instead of bypassing them to the underlying origin.
+compatibility_flags = ["global_fetch_strictly_public"]
 workers_dev = false
 preview_urls = false
 

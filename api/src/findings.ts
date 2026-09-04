@@ -71,7 +71,7 @@ export function buildFindings(report: Omit<ScanReport, "findings" | "summary">):
       "http-error",
       final.status >= 500 ? "critical" : "warning",
       `Final response returned HTTP ${final.status}`,
-      "The request path did not finish with a successful page response.",
+      "The observer received an error or blocking response. Its headers may differ from the intended page; this trace cannot establish that page's security policy.",
       `http.hops.${hops.length - 1}.status`,
     ));
   }
@@ -110,7 +110,7 @@ export function buildFindings(report: Omit<ScanReport, "findings" | "summary">):
     ["referrer-policy", "Referrer-Policy"],
   ];
   const missing = requiredSecurityHeaders.filter(([key]) => !finalHeaders[key]).map(([, label]) => label);
-  if (final && final.status > 0 && missing.length > 0) {
+  if (final && final.status >= 200 && final.status < 300 && missing.length > 0) {
     findings.push(finding(
       "security-headers-missing",
       "warning",
@@ -119,7 +119,7 @@ export function buildFindings(report: Omit<ScanReport, "findings" | "summary">):
       `http.hops.${Math.max(0, hops.length - 1)}.responseHeaders`,
       "medium",
     ));
-  } else if (final && final.status > 0) {
+  } else if (final && final.status >= 200 && final.status < 300) {
     findings.push(finding(
       "security-headers-present",
       "positive",
