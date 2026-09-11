@@ -48,6 +48,7 @@ export async function mapDependencies(
   budget?: RequestBudget,
   userAgent: string = "RequestScope/1.0 (+https://requestscope.illek.ie)",
 ): Promise<DependencyMap> {
+  requireBudget(budget);
   const started = performance.now();
   const budgetStarted = budget?.snapshot();
   // One shared validation memo for every derived fetch of this map, so hosts

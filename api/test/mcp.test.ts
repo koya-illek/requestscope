@@ -31,11 +31,11 @@ describe("MCP Streamable HTTP endpoint", () => {
 
   it("publishes full trace, URL risk, and report retrieval tools with schemas", async () => {
     const response = await handleMcp(request("tools/list"), async () => assessment);
-    const body = await response.json<{ result: { tools: Array<{ name: string; description: string; inputSchema: object; outputSchema: object }> } }>();
+    const body = await response.json<{ result: { tools: Array<{ name: string; description: string; inputSchema: object; outputSchema: object; annotations?: { idempotentHint?: boolean } }> } }>();
     expect(body.result.tools.map(tool => tool.name)).toEqual(["trace_request", "assess_url_risk", "get_requestscope_report"]);
     const risk = body.result.tools.find(tool => tool.name === "assess_url_risk") as { inputSchema: { properties: Record<string, unknown> } };
     expect(risk.inputSchema.properties.externalReputation).toBeDefined();
-    const trace = body.result.tools.find(tool => tool.name === "trace_request") as {
+    const trace = body.result.tools.find(tool => tool.name === "trace_request") as unknown as {
       inputSchema: { properties: Record<string, { default?: boolean }> };
       annotations: { idempotentHint: boolean };
     };

@@ -78,13 +78,20 @@ describe("probeTakeover result contract", () => {
   it("reports only subdomains whose CNAME matches a known pattern", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
-      if (url.hostname === "cloudflare-dns.com") {
+      if (url.hostname === "cloudflare-dns.com" || url.hostname === "dns.google") {
         const name = url.searchParams.get("name");
-        const answer = (data: string) => Response.json({ Status: 0, AD: false, Answer: [{ name, type: 5, TTL: 300, data }] });
-        if (name === "dangling.example.com") return answer("rs8-probe.webflow.io.");
-        if (name === "unrelated.example.com") return answer("internal-elb.eu-west-1.elb.amazonaws.com.");
-        if (name === "broken.example.com") throw new TypeError("resolver unreachable");
-        return Response.json({ Status: 3 });
+        const type = url.searchParams.get("type");
+        if (type === "CNAME") {
+          const answer = (data: string) => Response.json({ Status: 0, AD: false, Answer: [{ name, type: 5, TTL: 300, data }] });
+          if (name === "dangling.example.com") return answer("rs8-probe.webflow.io.");
+          if (name === "unrelated.example.com") return answer("internal-elb.eu-west-1.elb.amazonaws.com.");
+          if (name === "broken.example.com") throw new TypeError("resolver unreachable");
+          return Response.json({ Status: 3 });
+        }
+        if (type === "A") {
+          return Response.json({ Status: 0, Answer: [{ name, type: 1, TTL: 300, data: "93.184.216.34" }] });
+        }
+        return Response.json({ Status: 0, Answer: [] });
       }
       if (url.hostname === "dangling.example.com") {
         return new Response("<p>The page you are looking for doesn&#x27;t exist or has been moved.</p>", { status: 404 });
