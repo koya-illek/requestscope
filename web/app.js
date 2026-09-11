@@ -476,7 +476,11 @@
     const limited = risk.findings.some(item => item.code === "incomplete-observation");
     verdict.textContent = limited && risk.verdict === "low" ? "INSPECTION LIMITED" : `${String(risk.verdict).toUpperCase()} · ${risk.riskScore}/100`;
     verdict.className = `risk-verdict ${limited && risk.verdict === "low" ? "medium" : enumToken(risk.verdict, ["low", "medium", "high"])}`;
-    $("#risk-summary").innerHTML = `<strong>${escapeHtml(risk.summary)}</strong><span>${escapeHtml(risk.confidence)} confidence · ${risk.findings.length} evidence item${risk.findings.length === 1 ? "" : "s"}</span>`;
+    const claimed = risk.claimedOrganisation ? ` · claimed ${risk.claimedOrganisation}` : "";
+    const services = Array.isArray(risk.services) && risk.services.length
+      ? ` · ${risk.services.map((item) => item.organisation || item.hostname).filter(Boolean).slice(0, 6).join(", ")}`
+      : "";
+    $("#risk-summary").innerHTML = `<strong>${escapeHtml(risk.summary)}</strong><span>${escapeHtml(risk.confidence)} confidence · ${risk.findings.length} evidence item${risk.findings.length === 1 ? "" : "s"}${escapeHtml(claimed)}${escapeHtml(services)}</span>`;
     renderReputation(risk.reputation);
     $("#risk-findings").innerHTML = risk.findings.length
       ? risk.findings.map((item) => `<article class="risk-finding ${enumToken(item.severity, ["low", "medium", "high"])}">
@@ -757,8 +761,12 @@
         `**Verdict:** ${String(risk.verdict).toUpperCase()} · ${risk.riskScore}/100 (${risk.confidence} confidence)`,
         "",
         risk.summary,
-        ""
+        "",
       );
+      if (risk.claimedOrganisation) lines.push(`Claimed organisation: ${risk.claimedOrganisation}`, "");
+      if (Array.isArray(risk.services) && risk.services.length) {
+        lines.push("Recognised services: " + risk.services.map((item) => `${item.organisation || "unknown"} (${item.hostname})`).join("; "), "");
+      }
       if (risk.findings.length) {
         lines.push("## Risk evidence", "");
         for (const item of risk.findings) {

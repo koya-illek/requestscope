@@ -6,7 +6,7 @@ import {
 } from "./classifier";
 import { probeTakeover } from "./takeover";
 import { fetchPublicUrl, type PublicResolution } from "./egress";
-import { RequestBudget } from "./budget";
+import { RequestBudget, requireBudget } from "./budget";
 import { redactTextForStorage } from "./security";
 import type {
   CertTransparencyAnalysis,
@@ -48,6 +48,7 @@ export async function mapDependencies(
   budget?: RequestBudget,
   userAgent: string = "RequestScope/1.0 (+https://requestscope.illek.ie)",
 ): Promise<DependencyMap> {
+  requireBudget(budget);
   const started = performance.now();
   const budgetStarted = budget?.snapshot();
   // One shared validation memo for every derived fetch of this map, so hosts
@@ -242,9 +243,7 @@ async function scrapeJsBundles(scriptDeps: Array<{ url: string; host: string }>,
         headers: { "User-Agent": userAgent },
         signal: AbortSignal.timeout(FETCH_TIMEOUT),
       };
-      const response = budget
-        ? (await fetchPublicUrl(bundle.url, budget, requestInit, 2, validatedHosts)).response
-        : await fetch(bundle.url, { ...requestInit, redirect: "manual" });
+      const response = (await fetchPublicUrl(bundle.url, requireBudget(budget), requestInit, 2, validatedHosts)).response;
 
       if (!response.ok) {
         failed += 1;
@@ -377,16 +376,12 @@ async function queryCertTransparency(hostname: string, budget?: RequestBudget): 
   const url = `https://crt.sh/?q=%.${encodeURIComponent(apex)}&output=json`;
 
   try {
-    const response = await (budget ? budget.fetch(url, {
+    const response = await requireBudget(budget).fetch(url, {
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(CT_TIMEOUT),
       cache: "no-store",
       resource: "ct",
-    }) : fetch(url, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(CT_TIMEOUT),
-      cache: "no-store",
-    }));
+    });
 
     if (!response.ok) {
       return { attempted: 1, successful: 0, failed: 1, skipped: 0, subdomains: [], total: 0, error: `crt.sh returned HTTP ${response.status}` };

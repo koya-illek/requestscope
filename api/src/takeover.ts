@@ -1,7 +1,7 @@
 import type { SubdomainTakeoverCheck } from "./types";
 import { queryDns } from "./dns";
 import { fetchPublicUrl, type PublicResolution } from "./egress";
-import type { RequestBudget } from "./budget";
+import { requireBudget, type RequestBudget } from "./budget";
 
 const MAX_PROBES = 20;
 const PROBE_TIMEOUT = 5_000;
@@ -313,9 +313,13 @@ async function probeSubdomain(
 
   // HTTP probe to look for takeover signatures
   try {
-    const { response, url } = budget
-      ? await fetchPublicUrl(`https://${subdomain}`, budget, { signal: AbortSignal.timeout(PROBE_TIMEOUT), resource: "takeover" }, 2, validatedHosts)
-      : { response: await fetch(`https://${subdomain}`, { redirect: "manual", signal: AbortSignal.timeout(PROBE_TIMEOUT) }), url: new URL(`https://${subdomain}`) };
+    const { response, url } = await fetchPublicUrl(
+      `https://${subdomain}`,
+      requireBudget(budget),
+      { signal: AbortSignal.timeout(PROBE_TIMEOUT), resource: "takeover" },
+      2,
+      validatedHosts,
+    );
 
     const httpStatus = response.status;
 
@@ -369,12 +373,13 @@ export async function probeTakeover(
   budget?: RequestBudget,
   validatedHosts?: Map<string, PublicResolution>,
 ): Promise<SubdomainTakeoverCheck[]> {
+  const gated = requireBudget(budget);
   const targets = subdomains.slice(0, MAX_PROBES);
   const results: SubdomainTakeoverCheck[] = [];
   for (const subdomain of targets) {
-    if (budget && !budget.canStart()) break;
+    if (!gated.canStart()) break;
     try {
-      const check = await probeSubdomain(subdomain, budget, validatedHosts);
+      const check = await probeSubdomain(subdomain, gated, validatedHosts);
       if (check) results.push(check);
     } catch {
       // Rejected probes (blocked derived target, exhausted budget) carry no

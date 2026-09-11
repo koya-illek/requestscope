@@ -25,10 +25,14 @@ RequestScope applies layered controls:
 - no cookies forwarded between hops
 - no user-controlled request headers
 - daily client rate limits without raw IP retention
+- MCP and `/api/v1/url-risk` are intentionally unauthenticated for testing;
+  they are bounded by `MCP_DAILY_LIMIT` (25) and the anonymous scan limit,
+  and MCP `trace_request` defaults `mapDependencies` to false (two quota
+  units when explicitly enabled)
 - optional owner scan-limit bypass stored only as an encrypted Worker secret;
   bypass IPs are never written to source, responses, reports, or D1
-- removal of URL fragments and redaction of every URL query value before
-  persistence or sharing
+- removal of URL fragments, redaction of every URL query value, and redaction
+  of high-entropy or token-like path segments before persistence or sharing
 - redaction of URL-bearing Location, CSP, NEL, Report-To, and selected header
   values, plus URL and token-shaped strings in derived evidence
 - restrictive CORS and security headers
@@ -41,10 +45,18 @@ RequestScope applies layered controls:
 - hard provider quotas and bounded provider timeouts
 
 DNS rebinding cannot be eliminated perfectly when fetching by hostname on an
-edge runtime. RequestScope narrows the window by requiring both Cloudflare DNS
-and Google Public DNS to return only public addresses immediately before each
-fetch, disabling fetch caching, and revalidating every redirect. Cloudflare's
-fetch isolation remains part of the trust boundary. Deployments must retain the
+edge runtime. The Worker `fetch` uses Cloudflare's resolver at connect time,
+which may differ from the just-completed DoH answers. RequestScope narrows the
+window by requiring both Cloudflare DNS and Google Public DNS to return only
+public addresses, failing closed when either address-family query errors,
+rejecting every non-public answer (including 6to4 `2002::/16` embeddings),
+disabling fetch caching, and **re-resolving every redirect hop** rather than
+reusing a per-request hostname memo on the primary chain. A memo is used only
+for derived same-request fetches (JS bundles, takeover probes) after a
+just-completed check. Resolvers are not required to return identical addresses
+— only exclusively public ones — so a split-horizon pair of public answers can
+still differ from the address used at connect time. Cloudflare's fetch
+isolation remains part of the trust boundary. Deployments must retain the
 multi-resolver checks, strict port allowlist, and low request limits.
 
 RequestScope is a diagnostic observer, not a vulnerability scanner. It does not
@@ -52,8 +64,10 @@ probe paths, submit forms, bypass authentication, or attempt exploitation.
 
 The scanner must use the original submitted query values to perform the requested
 fetch. Those values exist only during that Worker invocation. Reports retain the
-parameter names with `[redacted]` values so evidence remains understandable
-without persisting signed URLs, reset tokens, OAuth codes, or session material.
+parameter names with `[redacted]` values, and replace UUID, JWT, long hex, and
+other high-entropy path segments with `[redacted]`, so evidence remains
+understandable without persisting signed URLs, reset tokens, OAuth codes, or
+session material.
 
 If external reputation is enabled, the original and final URL, including query
 values, are also sent to Google Web Risk and PhishTank because path and query
@@ -77,6 +91,7 @@ after a separate warning. RequestScope never submits that scan itself. Cloudflar
 states that URL Scanner reports are retained and may be made public.
 
 Reports are retained in D1 for the configured period, currently 14 days.
-Validated scans, MCP tool calls, report reads, and provider quota accounting
-are bounded and durable in D1 with hashed client keys. MCP handshake or
-discovery messages do not write rate-limit rows.
+Validated scans, MCP tool calls, existing-report reads, and provider quota
+accounting are bounded and durable in D1 with hashed client keys. MCP handshake
+or discovery messages do not write rate-limit rows. A well-formed but missing
+report ID is a D1 SELECT and a 404 — it does not insert a `rate_limits` row.

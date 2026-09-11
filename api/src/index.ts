@@ -119,6 +119,7 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): 
         ...cors,
         Location: `/api/scans/${report.id}`,
         "Cache-Control": "no-store",
+        "X-RequestScope-Recent-Observation": report.reusedRecentObservation ? "reused" : "fresh",
       });
     }
 
@@ -127,7 +128,11 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): 
       if (!await authorizedRiskRequest(request, env)) return json({ error: "Invalid API credential" }, 401, cors);
       const input = await readRiskInput(request);
       const report = await createScan(request, input, env, ctx);
-      return json(report.urlRisk, 200, { ...cors, "Cache-Control": "no-store" });
+      return json(report.urlRisk, 200, {
+        ...cors,
+        "Cache-Control": "no-store",
+        "X-RequestScope-Recent-Observation": report.reusedRecentObservation ? "reused" : "fresh",
+      });
     }
 
     if (url.pathname === "/mcp" || url.pathname === "/mcp/v2") {
@@ -143,7 +148,7 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): 
         }
         const input = {
           url: String(args.url || ""),
-          mapDependencies: tool === "trace_request" ? args.mapDependencies !== false : false,
+          mapDependencies: tool === "trace_request" && args.mapDependencies === true,
           claimedOrganisation: args.claimedOrganisation as string | undefined,
           messageContext: args.messageContext as string | undefined,
           externalReputation: args.externalReputation === true,
@@ -154,7 +159,16 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): 
         const report = await createScan(request, input, env, ctx, (event) => onProgress({ message: event.message }), { chargeAnonymousScanQuota: false });
         return tool === "assess_url_risk" ? report.urlRisk! : report;
       }, {
-        beforeToolCall: async () => enforceScopedDailyRateLimit(request, env, "mcp", clampInt(env.MCP_DAILY_LIMIT, 200, 1, 5000), "Daily MCP request limit"),
+        beforeToolCall: async (tool, args) => enforceScopedDailyRateLimit(
+          request,
+          env,
+          "mcp",
+          clampInt(env.MCP_DAILY_LIMIT, 25, 1, 5000),
+          "Daily MCP request limit",
+          // Mapped traces do extra JS, CT, and takeover egress; charge two
+          // units so they cannot undercut the anonymous UI scan path.
+          tool === "trace_request" && args.mapDependencies === true ? 2 : 1,
+        ),
         corsHeaders: cors,
       });
     }
@@ -163,12 +177,14 @@ async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): 
     if (match && isRead) {
       if (request.headers.get("Origin") && !origin) return json({ error: "Origin not allowed" }, 403, cors);
       if (!REPORT_ID.test(match[1])) return json({ error: "Report not found" }, 404, cors);
-      await enforceScopedDailyRateLimit(request, env, "report", clampInt(env.REPORT_DAILY_LIMIT, 120, 1, 5000), "Daily report retrieval limit");
+      // Load first so a well-formed but missing ID is a cheap SELECT + 404
+      // and does not burn a rate_limits INSERT. Enumeration of 96-bit IDs
+      // is not a practical oracle; charging only hits keeps D1 writes useful.
       const report = await loadReport(env.DB, match[1]);
       if (!report) return json({ error: "Report not found or expired" }, 404, cors);
+      await enforceScopedDailyRateLimit(request, env, "report", clampInt(env.REPORT_DAILY_LIMIT, 120, 1, 5000), "Daily report retrieval limit");
       // A stored report never changes, so its ID is a strong ETag. The quota
-      // above is still charged first: a 304 must not become a free
-      // existence oracle over the ID space.
+      // is charged only after a live row is found: 304s still consume quota.
       const etag = `"${match[1]}"`;
       if (ifNoneMatchSatisfied(request, etag)) {
         return new Response(null, {
@@ -337,7 +353,7 @@ async function createScan(
   // scan scope as well would double-count or make MCP_DAILY_LIMIT unreachable.
   if (options.chargeAnonymousScanQuota !== false) await enforceRateLimit(request, env);
   const cacheKey = await recentScanCacheKey(
-    request.url,
+    request,
     normalized.toString(),
     Boolean(input.mapDependencies),
     Boolean(input.externalReputation),
@@ -350,7 +366,9 @@ async function createScan(
   if (cached) {
     const report = await cached.json<ScanReport>();
     onProgress({ stage: "complete", message: "Loaded a recent edge observation" });
-    return report;
+    // Flag is response-only: the cached body is the original stored report
+    // and must not grow a durable "reused" marker that later readers inherit.
+    return { ...report, reusedRecentObservation: true };
   }
 
   const retention = clampInt(env.REPORT_RETENTION_DAYS, 14, 1, 90);
@@ -449,7 +467,7 @@ function streamScan(
 }
 
 async function recentScanCacheKey(
-  requestUrl: string,
+  request: Request,
   targetUrl: string,
   mapDeps: boolean,
   externalReputation: boolean,
@@ -457,9 +475,13 @@ async function recentScanCacheKey(
   claimed?: string,
   context?: string,
 ): Promise<Request> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${targetUrl}:${mapDeps}:${externalReputation}:${mobileUserAgent}:${claimed || ""}:${context || ""}`));
+  // Scope the 5-minute replay to the hashed client, not the colo. Sharing a
+  // capability report ID across unrelated callers was the privacy surprise;
+  // the same client retrying still avoids a second full observation.
+  const ip = request.headers.get("CF-Connecting-IP") || "local";
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${ip}:${targetUrl}:${mapDeps}:${externalReputation}:${mobileUserAgent}:${claimed || ""}:${context || ""}`));
   const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  const base = new URL(requestUrl);
+  const base = new URL(request.url);
   return new Request(`${base.origin}/__recent_scan/${hash}`, { method: "GET" });
 }
 
@@ -467,21 +489,22 @@ async function enforceRateLimit(request: Request, env: Env): Promise<void> {
   return enforceScopedDailyRateLimit(request, env, "scan", clampInt(env.DAILY_SCAN_LIMIT, 15, 1, 500), "Daily anonymous scan limit");
 }
 
-async function enforceScopedDailyRateLimit(request: Request, env: Env, scope: string, limit: number, label: string): Promise<void> {
+async function enforceScopedDailyRateLimit(request: Request, env: Env, scope: string, limit: number, label: string, units = 1): Promise<void> {
   const ip = request.headers.get("CF-Connecting-IP") || "local";
   if ((scope === "scan" || scope === "mcp") && bypassesScanRateLimit(ip, env.RATE_LIMIT_BYPASS_IPS)) return;
   const date = new Date().toISOString().slice(0, 10);
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${date}:${ip}`));
   const key = `${scope}:${[...new Uint8Array(digest)].slice(0, 16).map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
   const now = new Date().toISOString();
+  const increment = Number.isFinite(units) && units > 0 ? Math.floor(units) : 1;
   const row = await env.DB.prepare(`
     INSERT INTO rate_limits (client_key, window_date, request_count, updated_at)
-    VALUES (?, ?, 1, ?)
+    VALUES (?, ?, ?, ?)
     ON CONFLICT(client_key, window_date)
-    DO UPDATE SET request_count = request_count + 1, updated_at = excluded.updated_at
+    DO UPDATE SET request_count = request_count + excluded.request_count, updated_at = excluded.updated_at
     RETURNING request_count
-  `).bind(key, date, now).first<{ request_count: number }>();
-  if ((row?.request_count || 1) > limit) throw new RateLimitError(`${label} of ${limit} reached.`);
+  `).bind(key, date, increment, now).first<{ request_count: number }>();
+  if ((row?.request_count || increment) > limit) throw new RateLimitError(`${label} of ${limit} reached.`);
 }
 
 function bypassesScanRateLimit(ip: string, configured: string | undefined): boolean {
@@ -578,7 +601,7 @@ function corsHeaders(origin: string | null): Record<string, string> {
     // cross-origin fetch when they are explicitly exposed: the conditional-
     // GET validator, the creation Location, the 429 back-off hint, and the
     // export attachment disposition.
-    "Access-Control-Expose-Headers": "ETag, Location, Retry-After, Content-Disposition",
+    "Access-Control-Expose-Headers": "ETag, Location, Retry-After, Content-Disposition, X-RequestScope-Recent-Observation",
     "Access-Control-Max-Age": "86400",
   };
 }

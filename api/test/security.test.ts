@@ -46,6 +46,14 @@ describe("report URL redaction", () => {
     expect(redactUrlForStorage("https://example.com/path")).toBe("https://example.com/path");
   });
 
+  it("redacts high-entropy and token-like path segments", () => {
+    expect(new URL(redactUrlForStorage("https://example.com/reset/a1b2c3d4e5f6g7h8i9j0")).pathname).toBe("/reset/[redacted]");
+    expect(new URL(redactUrlForStorage("https://example.com/login/550e8400-e29b-41d4-a716-446655440000")).pathname).toBe("/login/[redacted]");
+    expect(new URL(redactUrlForStorage("https://example.com/cb/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.signaturepart")).pathname).toBe("/cb/[redacted]");
+    expect(new URL(redactUrlForStorage("https://example.com/account/verify")).pathname).toBe("/account/verify");
+    expect(new URL(redactUrlForStorage("https://example.com/reset/short")).pathname).toBe("/reset/short");
+  });
+
   it("removes fragments and URL-bearing header secrets", () => {
     const location = redactHeaderForStorage("location", "https://example.com/continue?token=secret#access_token=fragment", new URL("https://example.com"));
     const csp = redactHeaderForStorage("content-security-policy", "default-src 'self'; report-uri https://collector.example/report?sig=header-secret#fragment");
@@ -91,6 +99,10 @@ describe("public address classification", () => {
     "2001:db8:1::1",
     "::ffff:127.0.0.1",
     "64:ff9b::127.0.0.1",
+    "2002:7f00:1::",
+    "2002:c0a8:1::",
+    "2002::",
+    "2002:0a00:1::1",
   ])("rejects non-public address %s", (address) => {
     expect(isPublicIp(address)).toBe(false);
   });

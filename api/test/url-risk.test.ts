@@ -50,6 +50,17 @@ describe("URL risk assessment", () => {
     const result = assessUrlRisk(target, "https://micros0ft.com/login", { claimedOrganisation: "Microsoft" });
     expect(result.verdict).toBe("high");
     expect(result.findings.map((finding) => finding.code)).toEqual(expect.arrayContaining(["brand-lookalike", "password-form", "sensitive-action-language"]));
+    expect(result.findings.find((finding) => finding.code === "password-form")?.confidence).toBe("high");
+  });
+
+  it("keeps a password form on an ordinary host at medium confidence", () => {
+    const result = assessUrlRisk(report("example.com", {
+      pageSecuritySignals: { passwordForm: true, forms: 1, externalFormAction: false, matchedLanguage: [] },
+    }), "https://example.com/login");
+    const password = result.findings.find((finding) => finding.code === "password-form");
+    expect(password?.severity).toBe("medium");
+    expect(password?.confidence).toBe("medium");
+    expect(result.confidence).toBe("medium");
   });
 
   it("downgrades an exact brand name on a plausible sibling TLD instead of hard-flagging it", () => {

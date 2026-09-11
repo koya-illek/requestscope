@@ -13,7 +13,7 @@ import {
   redactHeaderForStorage,
 } from "./security";
 import { RequestBudget, BudgetExceededError } from "./budget";
-import { assertPublicTarget, assertResolutionHealthy, uniqueAddresses, type PublicResolution } from "./egress";
+import { assertPublicTarget, assertResolutionHealthy, uniqueAddresses } from "./egress";
 import { USER_AGENTS, type DeviceProfile } from "./device-profile";
 import { API_VERSION } from "./version";
 import type { CoverageStatus, Dependency, DnsQueryResult, PageSecuritySignals, RedirectHop, ScanReport, PhaseCoverage } from "./types";
@@ -75,25 +75,21 @@ export async function analyzeUrl(
   const createdAt = new Date();
   const expiresAt = new Date(createdAt.getTime() + retentionDays * 86_400_000);
   const dnsQueries = await inspectDns(initial.hostname, budget);
-  assertResolutionHealthy(initial.hostname, dnsQueries);
-  const initialAddresses = uniqueAddresses(dnsQueries);
+  // Address records are the SSRF gate. CAA/NS/CNAME evidence can degrade
+  // without failing a target that already resolved publicly on A/AAAA.
+  const addressQueries = dnsQueries.filter((query) => query.type === "A" || query.type === "AAAA");
+  assertResolutionHealthy(initial.hostname, addressQueries);
+  const initialAddresses = uniqueAddresses(addressQueries);
   if (initialAddresses.some((address) => !isPublicIp(address))) {
     throw new BlockedTargetError("The hostname resolves to a private or reserved network address.");
   }
-  const secondaryQueries = await assertSecondaryResolutionPublic(initial.hostname, budget);
+  await assertSecondaryResolutionPublic(initial.hostname, budget);
   onProgress({ stage: "dns", message: `Resolved ${initialAddresses.length} public address records` });
 
   const hops: RedirectHop[] = [];
-  // One validation per unique redirect hostname per request: revisiting a host
-  // inside the same trace reuses its public-target resolution instead of
-  // spending four more DNS subrequests on it. The initial host is seeded so a
-  // redirect loop back to the origin reuses its completed validation.
-  const validatedTargets = new Map<string, PublicResolution>();
-  validatedTargets.set(initial.hostname.toLowerCase().replace(/\.$/, ""), {
-    hostname: initial.hostname,
-    addresses: initialAddresses,
-    queries: [...dnsQueries, ...secondaryQueries],
-  });
+  // Redirect hops always re-resolve. A per-request memo here would skip a
+  // fresh A/AAAA check after a short-TTL rebinding swap on a host already
+  // seen earlier in the chain. Derived fetches keep their own memo.
   let current = initial;
   let finalResponse: Response | null = null;
   let bodyText = "";
@@ -172,7 +168,7 @@ export async function analyzeUrl(
       }
       try {
         const next = safeRedirect(current, location);
-        await assertPublicTarget(next.hostname, budget, validatedTargets);
+        await assertPublicTarget(next.hostname, budget);
         response.body?.cancel();
         current = next;
       } catch (error) {

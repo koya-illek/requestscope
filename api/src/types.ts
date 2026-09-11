@@ -323,6 +323,9 @@ export interface ScanReport {
     positive: number;
     info: number;
   };
+  /** Set on the create/stream response when a same-client 5-minute cache hit
+   * was reused. Never persisted in D1. */
+  reusedRecentObservation?: boolean;
 }
 
 export interface Env {

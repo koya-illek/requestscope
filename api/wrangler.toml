@@ -7,10 +7,15 @@ workers_dev = false
 preview_urls = false
 
 [vars]
-ALLOWED_ORIGINS = "https://requestscope.illek.ie,http://localhost:8788,http://127.0.0.1:8788"
+# Production browser allowlist only. Local `wrangler dev` serving web/ from a
+# separate origin should pass ALLOWED_ORIGINS including localhost via --var
+# or the [env.dev] block below — never ship loopback origins to production.
+ALLOWED_ORIGINS = "https://requestscope.illek.ie"
 REPORT_RETENTION_DAYS = "14"
 DAILY_SCAN_LIMIT = "15"
-MCP_DAILY_LIMIT = "200"
+# Intentionally open MCP/url-risk for testing; keep this close to the anonymous
+# UI scan limit so agents cannot cheaply run bulk traces. Mapped traces cost 2.
+MCP_DAILY_LIMIT = "25"
 REPORT_DAILY_LIMIT = "120"
 WEB_RISK_MONTHLY_LIMIT = "90000"
 PHISHTANK_DAILY_LIMIT = "100"
@@ -28,7 +33,8 @@ database_id = "582af539-f646-4aa8-b315-64c6425314ed"
 
 [observability]
 enabled = true
-head_sampling_rate = 1
+# 10% is enough for operational traces without retaining every request.
+head_sampling_rate = 0.1
 
 [assets]
 directory = "../web"

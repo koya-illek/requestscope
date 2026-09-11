@@ -60,10 +60,37 @@ export function redactUrlForStorage(input: string): string {
         url.searchParams.set(key, "[redacted]");
       }
     }
+    url.pathname = redactPathForStorage(url.pathname);
     return url.toString();
   } catch {
     return "[invalid URL]";
   }
+}
+
+/** Replace high-entropy or token-shaped path segments. Reset links, JWTs, and
+ * capability tokens often live in the path, not only the query string. */
+export function redactPathForStorage(pathname: string): string {
+  if (!pathname || pathname === "/") return pathname;
+  const trailingSlash = pathname.endsWith("/");
+  const redacted = pathname.split("/").map((segment) => (segment && isSensitivePathSegment(segment) ? "[redacted]" : segment)).join("/");
+  return trailingSlash && !redacted.endsWith("/") ? `${redacted}/` : redacted;
+}
+
+function isSensitivePathSegment(segment: string): boolean {
+  let decoded = segment;
+  try {
+    decoded = decodeURIComponent(segment);
+  } catch {
+    decoded = segment;
+  }
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(decoded)) return true;
+  if (/^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$/.test(decoded)) return true;
+  if (decoded.length >= 16 && /^[0-9a-f]+$/i.test(decoded)) return true;
+  if (decoded.length >= 20 && /^[A-Za-z0-9._~-]+$/.test(decoded)) {
+    const classes = Number(/[a-z]/.test(decoded)) + Number(/[A-Z]/.test(decoded)) + Number(/\d/.test(decoded));
+    return classes >= 2;
+  }
+  return false;
 }
 
 /** Sanitize a stored header or other text that may contain URL-shaped data. */
@@ -147,6 +174,9 @@ function isPublicIPv6(value: string): boolean {
   if (first < 0x2000 || first > 0x3fff) return false;
   // Unique-local (fc00::/7), link-local (fe80::/10), and multicast (ff00::/8).
   if ((first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80 || (first & 0xff00) === 0xff00) return false;
+  // 6to4 (2002::/16) embeds an IPv4 address and is a common way to smuggle
+  // loopback or RFC1918 targets past a hostname-only public-address check.
+  if (first === 0x2002) return false;
   if (first === 0x2001) {
     // Teredo tunneling (2001:0000::/32).
     if (second === 0x0000) return false;

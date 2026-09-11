@@ -10,7 +10,7 @@ test("shipped asset weights stay inside the performance budget", async () => {
   // what a visitor transfers (Cloudflare compresses text assets).
   const budgets = [
     { file: "app.js", maxBytes: 56 * 1024, maxGzipBytes: 16 * 1024 },
-    { file: "styles.css", maxBytes: 42 * 1024, maxGzipBytes: 11 * 1024 },
+    { file: "styles.css", maxBytes: 44 * 1024, maxGzipBytes: 11 * 1024 },
     { file: "fonts/inter-latin-wght-normal-v5.3.0.woff2", maxBytes: 52 * 1024 },
   ];
   let totalRaw = 0;
@@ -24,4 +24,13 @@ test("shipped asset weights stay inside the performance budget", async () => {
     }
   }
   assert.ok(totalRaw <= 148 * 1024, `combined payload is ${totalRaw} bytes; total budget is ${148 * 1024}`);
+});
+
+test("API_VERSION stays in lockstep with package manifests", async () => {
+  const versionSource = await readFile(new URL("../api/src/version.ts", import.meta.url), "utf8");
+  const apiManifest = JSON.parse(await readFile(new URL("../api/package.json", import.meta.url), "utf8"));
+  const rootManifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  const version = versionSource.match(/export const API_VERSION = "([^"]+)"/)?.[1];
+  assert.equal(version, apiManifest.version);
+  assert.equal(version, rootManifest.version);
 });

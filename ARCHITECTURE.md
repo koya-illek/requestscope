@@ -87,7 +87,7 @@ flowchart LR
 7. Optional dependency, script, CT, and takeover phases run through the same egress and request-budget controls.
 8. Deterministic findings and the URL-risk score are created from captured evidence. Missing phases remain failed, skipped, partial, or unavailable.
 9. If the caller explicitly enabled external reputation, the original and final URL are checked with Google Web Risk and PhishTank, while only hostnames are sent to Cloudflare's malware-filtering DNS.
-10. Query values, URL fragments, credentials, URL-bearing headers, reporting endpoints, and derived URL contexts are redacted before persistence.
+10. Query values, URL fragments, credentials, high-entropy path segments, URL-bearing headers, reporting endpoints, and derived URL contexts are redacted before persistence.
 11. The versioned report is written to D1 under an opaque identifier and returned to the caller.
 
 ## Interfaces

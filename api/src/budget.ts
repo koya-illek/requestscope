@@ -137,3 +137,10 @@ export class RequestBudget {
   }
 }
 
+/** Derived fetches must share the request-wide budget. Omitting it used to
+ * fall through to an ungated `fetch`; fail closed instead. */
+export function requireBudget(budget?: RequestBudget): RequestBudget {
+  if (!budget) throw new BudgetExceededError("Derived fetches require a request budget.");
+  return budget;
+}
+

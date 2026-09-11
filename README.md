@@ -40,7 +40,14 @@ cd api && npx wrangler dev --local --persist-to ../.wrangler/state
 ```
 
 Serve `web/` with any static web server and set its API endpoint in
-`web/config.js`.
+`web/config.js`. Production `ALLOWED_ORIGINS` is only `https://requestscope.illek.ie`.
+If that separately served local UI calls a `wrangler dev` API, pass loopback
+origins for that session only:
+
+```bash
+cd api && npx wrangler dev --local --persist-to ../.wrangler/state \
+  --var ALLOWED_ORIGINS:https://requestscope.illek.ie,http://localhost:8788,http://127.0.0.1:8788
+```
 
 ## API
 
@@ -91,10 +98,13 @@ known service ownership, password/forms, and sensitive-action language. Raw
 HTML and raw message context are never returned to the agent. See
 [`web/openapi.yaml`](web/openapi.yaml) for the connector definition.
 
-For an authenticated Copilot deployment, set the Worker secret
-`COPILOT_API_KEY` and configure the custom connector to send it as a Bearer
-token. If the secret is absent, the endpoint remains available under the same
-anonymous daily rate limit as normal scans.
+MCP and `POST /api/v1/url-risk` are **intentionally open for testing**. They do
+not require `COPILOT_API_KEY`. Abuse is mitigated by durable hashed daily
+limits and safer defaults (see below), not by mandatory Bearer auth. Set
+`COPILOT_API_KEY` only when you want a later, gated MSP/Copilot deployment;
+both interfaces then require `Authorization: Bearer ...`. Until that secret is
+set, treat the public hostname as a rate-limited test surface, not a tenant
+boundary.
 
 A low assessment means that RequestScope did not observe strong indicators; it
 does not certify that a URL is safe. External reputation is opt-in because the
@@ -178,11 +188,23 @@ without a progressToken keep the single-response JSON behaviour.
 - OpenAPI agents/custom connectors: import [`web/openapi.yaml`](web/openapi.yaml) and
   call `/api/v1/url-risk` directly.
 
-The REST endpoints intentionally remain open for initial testing and share the
-anonymous daily scan limit; MCP tool calls are metered by their own durable
-`MCP_DAILY_LIMIT` instead of consuming anonymous scan quota, so configuring one
-limit does not require raising the other. Before wider MSP use, set
-`COPILOT_API_KEY`; both interfaces then require `Authorization: Bearer ...`.
+MCP and `/api/v1/url-risk` stay reachable without a key so Copilot and other
+agents can be tested against the live hostname. They are protected by rate
+limits, not by mandatory auth:
+
+- Anonymous UI / REST scans: `DAILY_SCAN_LIMIT` (15).
+- MCP tool calls: `MCP_DAILY_LIMIT` (25 — modestly above the UI scan limit so
+  an agent can iterate, not a cheaper bulk-trace path). Handshake and
+  `tools/list` do not consume quota.
+- `trace_request` defaults `mapDependencies` to `false`, matching REST/OpenAPI.
+  Enabling the dependency map costs **two** MCP quota units because it performs
+  extra JS, Certificate Transparency, and takeover egress.
+- Report retrieval: `REPORT_DAILY_LIMIT` (120), charged only after a live
+  report row is found.
+
+Set `COPILOT_API_KEY` only before wider MSP use; both interfaces then require
+`Authorization: Bearer ...`. Do not treat the open test surface as
+authenticated.
 
 The static `web/` application is served directly from the same Worker through
 Cloudflare Workers Assets; there is no separate Pages deployment and no root
@@ -190,7 +212,16 @@ redirect.
 
 Reports expire after 14 days by default. No raw visitor IP address is stored.
 Query parameter names are retained for evidence, but their values are redacted
-before reports enter D1, responses, exports, or share links.
+before reports enter D1, responses, exports, or share links. High-entropy or
+token-like path segments (reset tokens, UUIDs, JWTs) are replaced with
+`[redacted]` as well.
+
+A successful scan may be reused for **five minutes** for the **same hashed
+client** and the same observation options. Different callers do not receive
+each other's report IDs. Create/stream responses set
+`X-RequestScope-Recent-Observation` to `reused` or `fresh`, and a cache hit
+includes `reusedRecentObservation: true` on the returned report (not stored
+in D1).
 
 Anonymous daily limits (scans, MCP tool calls, and report retrievals) are
 durable in D1 and keyed by a one-way hash of the calendar date and client IP,

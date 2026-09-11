@@ -1,5 +1,28 @@
 import { describe, expect, it, vi } from "vitest";
-import { mapDependencies, MAX_CT_RESPONSE_BYTES } from "../src/deps";
+import { mapDependencies as mapDependenciesRaw, MAX_CT_RESPONSE_BYTES } from "../src/deps";
+import { BudgetExceededError, RequestBudget } from "../src/budget";
+
+function mapDependencies(
+  hostname: string,
+  pageUrl: URL,
+  headers: Record<string, string>,
+  scripts: Array<{ url: string; host: string }>,
+) {
+  return mapDependenciesRaw(hostname, pageUrl, headers, scripts, () => {}, new RequestBudget());
+}
+
+function publicDns(url: URL): Response {
+  const type = url.searchParams.get("type");
+  const name = url.searchParams.get("name") || "example.com";
+  if (type === "A") {
+    return Response.json({ Status: 0, Answer: [{ name, type: 1, TTL: 300, data: "93.184.216.34" }] });
+  }
+  return Response.json({ Status: 0, Answer: [] });
+}
+
+function isPublicResolver(hostname: string): boolean {
+  return hostname === "cloudflare-dns.com" || hostname === "dns.google";
+}
 
 describe("mapDependencies", () => {
   it("parses CSP headers and extracts domains", async () => {
@@ -68,6 +91,7 @@ describe("mapDependencies", () => {
 
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (isPublicResolver(url.hostname)) return publicDns(url);
       if (url.hostname === "crt.sh") return Response.json([]);
       if (url.pathname.endsWith(".js")) {
         return new Response(fakeJs, {
@@ -185,6 +209,7 @@ describe("mapDependencies", () => {
 
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (isPublicResolver(url.hostname)) return publicDns(url);
       if (url.hostname === "crt.sh") return Response.json([{ name_value: "api.example.com" }]);
       if (url.pathname.endsWith(".js")) {
         return new Response(fakeJs, { headers: { "Content-Type": "application/javascript" } });
@@ -227,6 +252,7 @@ describe("mapDependencies", () => {
 
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (isPublicResolver(url.hostname)) return publicDns(url);
       if (url.hostname === "crt.sh") return Response.json([]);
       if (url.pathname.endsWith(".js")) {
         return new Response(fakeJs, { headers: { "Content-Type": "application/javascript" } });
@@ -288,5 +314,14 @@ describe("mapDependencies", () => {
 
     expect(result.sources.certTransparency.failed).toBe(1);
     expect(result.sources.certTransparency.error).toMatch(/not valid JSON/);
+  });
+
+  it("fails closed when a derived fetch is requested without a budget", async () => {
+    await expect(mapDependenciesRaw(
+      "example.com",
+      new URL("https://example.com"),
+      {},
+      [],
+    )).rejects.toBeInstanceOf(BudgetExceededError);
   });
 });

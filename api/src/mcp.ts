@@ -38,7 +38,7 @@ export type McpExecute = (
 ) => Promise<ScanReport | UrlRiskAssessment>;
 
 export interface McpHandlerOptions {
-  beforeToolCall?: () => Promise<void>;
+  beforeToolCall?: (name: string, args: Record<string, unknown>) => Promise<void>;
   corsHeaders?: Record<string, string>;
 }
 
@@ -197,7 +197,7 @@ async function callTool(id: string | number | null, params: unknown, execute: Mc
   const { name, args } = parsedToolCall(params);
   // Quota enforcement runs before the guarded execution so RateLimitError
   // propagates to handleMcp and becomes an HTTP 429 JSON-RPC error.
-  await options.beforeToolCall?.();
+  await options.beforeToolCall?.(name, args);
   return rpcResult(id, await runTool(name, args, execute, () => {}));
 }
 
@@ -217,8 +217,8 @@ async function streamedToolCall(
 ): Promise<Response> {
   const invalid = toolRequestError(params);
   if (invalid) return rpcError(id, invalid.code, invalid.message);
-  await options.beforeToolCall?.();
   const { name, args } = parsedToolCall(params);
+  await options.beforeToolCall?.(name, args);
   const encoder = new TextEncoder();
   // A client disconnect makes enqueue reject; the flag turns later sends and
   // the close into no-ops. The scan keeps running so the report is still
@@ -271,14 +271,14 @@ function traceTool() {
     description: "Return the full RequestScope report: DNS observations, redirect chain, HTTP evidence, page security signals, dependencies, optional dependency map, findings, opt-in Google Web Risk, PhishTank and Cloudflare DNS reputation, coverage, and shareable report ID.",
     inputSchema: { type: "object", additionalProperties: false, required: ["url"], properties: {
       url: { type: "string", maxLength: 2048, description: "Public HTTP or HTTPS URL." },
-      mapDependencies: { type: "boolean", default: true, description: "Inspect bounded page dependencies and their relationships." },
+      mapDependencies: { type: "boolean", default: false, description: "Inspect bounded page dependencies and their relationships. Defaults to false to match REST/OpenAPI; enabling it costs two MCP quota units because it performs extra egress." },
       mobileUserAgent: { type: "boolean", default: false, description: "Request the target as mobile Safari instead of the RequestScope identity. Some sites serve different content per device; the report records which profile was used. The observer stays at the Cloudflare edge either way." },
       claimedOrganisation: { type: "string", maxLength: 120, description: "Organisation the surrounding message claims to represent, used by the URL-risk assessment included in the trace." },
       messageContext: { type: "string", maxLength: 1000, description: "Brief non-sensitive context, for example Password reset email." },
       externalReputation: { type: "boolean", default: false, description: "After user approval, send the original and final URL, including query values, to Google Web Risk and PhishTank; Cloudflare's malware-filtering DNS receives hostnames only. Never enable for private or token-bearing URLs." },
     } },
     outputSchema: scanReportSchema(),
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   };
 }
 
