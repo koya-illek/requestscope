@@ -6,6 +6,8 @@ inspects response and cache behaviour, extracts bounded HTML resource references
 creates a privacy-redacted shareable report, and produces an explainable URL
 security risk assessment suitable for people or Copilot agents.
 
+Live at [requestscope.illek.ie](https://requestscope.illek.ie).
+
 ![RequestScope architecture: a public caller is gated, dual-resolved over DNS, traced hop by hop, then stored as a redacted D1 report for the browser or an MCP agent](docs/assets/requestscope-architecture.png)
 
 The infographic is a conceptual overview of that path. The compact flowchart
@@ -250,3 +252,9 @@ The site owner can exempt trusted source IPs from scan and MCP scan limits by
 setting the `RATE_LIMIT_BYPASS_IPS` Worker secret to a comma-separated list.
 This value must never be placed in `wrangler.toml`; report retrieval limits and
 all upstream provider quotas still apply.
+
+## License
+
+MIT © Koya Illek. See [LICENSE](LICENSE).
+
+Live service: [requestscope.illek.ie](https://requestscope.illek.ie).
