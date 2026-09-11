@@ -1,5 +1,7 @@
 # RequestScope
 
+An Illek project.
+
 RequestScope shows every observable step between a URL and the page it delivers.
 It performs an evidence-labelled DNS and HTTP trace, follows redirects manually,
 inspects response and cache behaviour, extracts bounded HTML resource references,
