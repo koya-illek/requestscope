@@ -6,20 +6,33 @@ inspects response and cache behaviour, extracts bounded HTML resource references
 creates a privacy-redacted shareable report, and produces an explainable URL
 security risk assessment suitable for people or Copilot agents.
 
+![RequestScope architecture: a public caller is gated, dual-resolved over DNS, traced hop by hop, then stored as a redacted D1 report for the browser or an MCP agent](docs/assets/requestscope-architecture.png)
+
+The infographic is a conceptual overview of that path. The compact flowchart
+below is the technical request path; [ARCHITECTURE.md](ARCHITECTURE.md) is the
+component, data-disclosure, and flow deep dive.
+
+## Contents
+
+- [Architecture](#architecture)
+- [Local development](#local-development)
+- [API](#api)
+- [MCP for Copilot and ChatGPT agents](#mcp-for-copilot-and-chatgpt-agents)
+- [Privacy, retention, and quotas](#privacy-retention-and-quotas)
+
 ## Architecture
 
-```text
-Cloudflare Worker
-┌─────────────────────────────────────────────┐
-│ Static application assets                  │
-│ Validation + privacy-preserving rate limit │
-│ DNS-over-HTTPS + manual HTTP trace         │
-│ Evidence + optional reputation adapters    │
-└──────────────────────┬──────────────────────┘
-                       │
-                       ▼
-                 Cloudflare D1
-               reports + quotas
+```mermaid
+flowchart LR
+    Caller["Browser, REST, or MCP"] --> Worker["Cloudflare Worker"]
+    Worker --> Gate["Validate and public-target gate"]
+    Gate --> Analyzer["Bounded trace and risk engine"]
+    Analyzer --> DNS["DNS over HTTPS"]
+    Analyzer --> Target["Authorised public URL"]
+    Analyzer -. explicit consent .-> Reputation["Optional reputation"]
+    Analyzer --> Report["Redacted report"]
+    Report --> DB[(Cloudflare D1)]
+    Worker --> Caller
 ```
 
 The Worker never claims to measure browser DNS, TCP, or TLS timings. HTTP
@@ -209,6 +222,8 @@ authenticated.
 The static `web/` application is served directly from the same Worker through
 Cloudflare Workers Assets; there is no separate Pages deployment and no root
 redirect.
+
+## Privacy, retention, and quotas
 
 Reports expire after 14 days by default. No raw visitor IP address is stored.
 Query parameter names are retained for evidence, but their values are redacted
