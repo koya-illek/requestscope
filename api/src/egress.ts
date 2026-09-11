@@ -20,8 +20,11 @@ export interface PublicResolution {
 
 /** Resolve a hostname through both configured public resolvers and fail closed.
  * When a validatedHosts map is supplied, an already-validated hostname is not
- * re-resolved; the memo lives for one request only, so it never outlives the
- * request deadline or the DNS TTLs involved. */
+ * re-resolved. Use that memo only for derived same-request fetches (JS
+ * bundles, takeover probes) after a just-completed check. The primary
+ * redirect chain must not pass a memo: a short-TTL rebinding swap on a host
+ * already seen earlier in the trace would otherwise skip a fresh A/AAAA
+ * check. The memo never outlives the request. */
 export async function assertPublicTarget(
   hostname: string,
   budget?: RequestBudget,

@@ -138,6 +138,23 @@ describe("analyzeUrl", () => {
     expect(report.http.contentBytesInspected).toBe(256 * 1024);
   });
 
+  it("continues the scan when CAA or NS evidence queries fail after public A/AAAA resolution", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (url.hostname === "cloudflare-dns.com" || url.hostname === "dns.google") {
+        const type = url.searchParams.get("type");
+        if (type === "CAA" || type === "NS") return new Response(null, { status: 503 });
+        return dnsResponse(url);
+      }
+      return new Response("<html>ok</html>", { headers: { "Content-Type": "text/html" } });
+    }));
+    const report = await analyzeUrl("https://example.com", 14);
+    expect(report.status).toBe("complete");
+    expect(report.dns.addresses).toContain("93.184.216.34");
+    expect(report.dns.queries.some((query) => query.type === "CAA" && query.error)).toBe(true);
+    expect(report.dns.queries.some((query) => query.type === "NS" && query.error)).toBe(true);
+  });
+
   it("fails closed when a resolver errors instead of treating a sibling answer as enough", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);

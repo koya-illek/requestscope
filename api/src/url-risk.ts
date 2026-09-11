@@ -111,7 +111,7 @@ export function assessUrlRisk(
     const suspiciousHost = findings.some((item) => item.code === "brand-lookalike" || item.code === "internationalized-domain");
     add(findings, "password-form", suspiciousHost ? "high" : "medium", suspiciousHost ? 28 : 14, "Password field observed",
       "The inspected page contains a password input. This is expected on legitimate login pages but increases impact when combined with deceptive-domain indicators.",
-      { finalHostname: finalHost }, "high", "page_observation");
+      { finalHostname: finalHost }, suspiciousHost ? "high" : "medium", "page_observation");
   }
   if (signals && signals.matchedLanguage.length > 0
     && findings.some((item) => ["brand-lookalike", "external-form-action", "password-form"].includes(item.code))) {

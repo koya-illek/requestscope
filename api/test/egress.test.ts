@@ -53,6 +53,32 @@ describe("shared public-target egress gate", () => {
     expect(memo.get("target.example")).toBeDefined();
   });
 
+  it("rejects a split-horizon answer that includes a private address", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (url.hostname === "dns.google") return dnsResponse(url, 0, "127.0.0.1");
+      if (url.hostname === "cloudflare-dns.com") return dnsResponse(url, 0, "93.184.216.34");
+      return new Response("should not fetch", { status: 200 });
+    }));
+    await expect(assertPublicTarget("target.example", new RequestBudget())).rejects.toThrow(/private or reserved/);
+  });
+
+  it("does not reuse a memo across split-horizon public and private answers when none is supplied", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
+      if (url.hostname === "cloudflare-dns.com" || url.hostname === "dns.google") return dnsResponse(url);
+      return new Response(null, { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await assertPublicTarget("target.example", new RequestBudget());
+    await assertPublicTarget("target.example", new RequestBudget());
+    const dnsCalls = fetchMock.mock.calls.filter((call) => {
+      const value = typeof call[0] === "string" || call[0] instanceof URL ? call[0].toString() : call[0].url;
+      return value.includes("cloudflare-dns.com") || value.includes("dns.google");
+    });
+    expect(dnsCalls.length).toBeGreaterThanOrEqual(8);
+  });
+
   it("caches each validated hostname into the supplied memo", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);

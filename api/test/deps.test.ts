@@ -1,5 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { mapDependencies, MAX_CT_RESPONSE_BYTES } from "../src/deps";
+import { mapDependencies as mapDependenciesRaw, MAX_CT_RESPONSE_BYTES } from "../src/deps";
+import { BudgetExceededError, RequestBudget } from "../src/budget";
+
+function mapDependencies(
+  hostname: string,
+  pageUrl: URL,
+  headers: Record<string, string>,
+  scripts: Array<{ url: string; host: string }>,
+) {
+  return mapDependenciesRaw(hostname, pageUrl, headers, scripts, () => {}, new RequestBudget());
+}
 
 describe("mapDependencies", () => {
   it("parses CSP headers and extracts domains", async () => {
@@ -288,5 +298,14 @@ describe("mapDependencies", () => {
 
     expect(result.sources.certTransparency.failed).toBe(1);
     expect(result.sources.certTransparency.error).toMatch(/not valid JSON/);
+  });
+
+  it("fails closed when a derived fetch is requested without a budget", async () => {
+    await expect(mapDependenciesRaw(
+      "example.com",
+      new URL("https://example.com"),
+      {},
+      [],
+    )).rejects.toBeInstanceOf(BudgetExceededError);
   });
 });

@@ -35,7 +35,12 @@ describe("MCP Streamable HTTP endpoint", () => {
     expect(body.result.tools.map(tool => tool.name)).toEqual(["trace_request", "assess_url_risk", "get_requestscope_report"]);
     const risk = body.result.tools.find(tool => tool.name === "assess_url_risk") as { inputSchema: { properties: Record<string, unknown> } };
     expect(risk.inputSchema.properties.externalReputation).toBeDefined();
-    const trace = body.result.tools.find(tool => tool.name === "trace_request") as { inputSchema: { properties: Record<string, unknown> } };
+    const trace = body.result.tools.find(tool => tool.name === "trace_request") as {
+      inputSchema: { properties: Record<string, { default?: boolean }> };
+      annotations: { idempotentHint: boolean };
+    };
+    expect(trace.inputSchema.properties.mapDependencies.default).toBe(false);
+    expect(trace.annotations.idempotentHint).toBe(false);
     expect(trace.inputSchema.properties).toMatchObject({
       mapDependencies: expect.any(Object),
       claimedOrganisation: expect.any(Object),
@@ -118,7 +123,7 @@ describe("MCP Streamable HTTP endpoint", () => {
 
   it("surfaces rate limits as an HTTP 429 JSON-RPC error instead of a tool result", async () => {
     const response = await handleMcp(request("tools/call", { name: "assess_url_risk", arguments: { url: "https://example.com" } }), async () => assessment, {
-      beforeToolCall: async () => { throw new RateLimitError("Daily MCP request limit of 200 reached."); },
+      beforeToolCall: async () => { throw new RateLimitError("Daily MCP request limit of 25 reached."); },
     });
     expect(response.status).toBe(429);
     // Back-off runs until the UTC-daily MCP window rolls over.
@@ -279,7 +284,7 @@ describe("MCP Streamable HTTP endpoint", () => {
         params: { name: "assess_url_risk", arguments: { url: "https://example.com" }, _meta: { progressToken: "tok-7" } },
       }),
     }), async () => assessment, {
-      beforeToolCall: async () => { throw new RateLimitError("Daily MCP request limit of 200 reached."); },
+      beforeToolCall: async () => { throw new RateLimitError("Daily MCP request limit of 25 reached."); },
     });
     expect(limited.status).toBe(429);
     expect(limited.headers.get("retry-after")).toBe(String(retryAfterSeconds()));

@@ -37,7 +37,11 @@
     <section class="panel privacy-panel">
       <h2>What is retained</h2>
       <p>A report is retained in Cloudflare D1 for up to 14 days. It contains a generated report ID, redacted requested and final URLs, hostnames, DNS observations, bounded HTTP status and selected redacted headers, redirect timing, static HTML reference metadata, derived findings, optional coverage, and release provenance.</p>
-      <p>Query values and URL fragments are removed before storage. URL-bearing Location, Content-Security-Policy, NEL, Report-To, and derived JavaScript evidence are sanitized. Raw page bodies, cookies, caller headers, message context, and provider response bodies are not retained.</p>
+      <p>Query values and URL fragments are removed before storage. High-entropy or token-like path segments — reset tokens, UUIDs, JWTs, and similar — are replaced with <code>[redacted]</code>. URL-bearing Location, Content-Security-Policy, NEL, Report-To, and derived JavaScript evidence are sanitized. Raw page bodies, cookies, caller headers, message context, and provider response bodies are not retained.</p>
+      <h2>Observation identity</h2>
+      <p>Each trace uses one of two fixed request identities. The default desktop profile identifies as RequestScope. The optional mobile profile identifies as mobile Safari (iPhone) so device-specific pages can be compared. Callers cannot supply a custom User-Agent. The chosen profile is stored as <code>observation.deviceProfile</code> on the report.</p>
+      <h2>Recent-scan cache</h2>
+      <p>A successful observation may be reused for five minutes for the same hashed client and the same options (URL, dependency map, reputation consent, device profile, and risk context). Different clients do not receive each other's report IDs. Create and stream responses advertise the reuse with the <code>X-RequestScope-Recent-Observation</code> header (<code>reused</code> or <code>fresh</code>) and a non-persisted <code>reusedRecentObservation</code> flag on the returned report. Quota is still charged on a cache hit. Reports remain capability URLs: anyone who learns the 16-character ID can retrieve the redacted report until it expires.</p>
       <h2>What the trace contacts</h2>
       <ul>
         <li>Cloudflare DNS and Google Public DNS receive hostnames and record types for public-target validation. Resolver responses are stored as DNS observations in the report.</li>
@@ -48,10 +52,11 @@
       <h2>Optional reputation consent</h2>
       <p>Reputation is disabled unless the checkbox or request field is explicitly enabled. Google Web Risk and PhishTank receive the complete original and final URL, including query values, because those values can affect a match. PhishTank may record request parameters and the source IP used for the request. Cloudflare's malware-filtering DNS receives hostnames only. These services have their own terms and privacy notices. A provider not listing a URL is not proof of safety.</p>
       <h2>Access and abuse controls</h2>
-      <p>Reports use opaque bearer-style IDs and are intended for limited sharing during open testing. Scan creation, provider quota accounting, MCP tool calls, and report reads use bounded daily counters with hashed client keys. MCP handshake or discovery requests do not write rate-limit rows. The service is not a tenant boundary and should not receive confidential customer URLs during testing.</p>
+      <p>Reports use opaque bearer-style IDs and are intended for limited sharing during open testing. Scan creation, provider quota accounting, MCP tool calls, and existing-report reads use bounded daily counters with hashed client keys. MCP handshake or discovery requests do not write rate-limit rows. A well-formed but unknown report ID is answered 404 without writing a rate-limit row.</p>
+      <p>The MCP endpoint and <code>/api/v1/url-risk</code> are intentionally open for testing — they do not require an API key. They are protected by stricter daily limits than a wide-open agent API: MCP tool calls are capped near the anonymous UI scan limit (25 vs 15), and MCP traces default to no dependency map. Missing report probes do not consume retrieval quota. This is a rate-limited test surface, not a tenant boundary, and should not receive confidential customer URLs.</p>
       <h2>Your choices</h2>
       <p>Do not submit URLs containing credentials, private customer data, session tokens, or reset links. Leave optional reputation and dependency mapping disabled when their external processing is not appropriate. Contact Illek through the published site if you need a report removed before expiry or need to raise a security concern.</p>
-      <p class="dialog-footnote">Last updated 22 August 2026. This notice describes the current open testing implementation. It does not create a promise of a particular provider's retention or availability.</p>
+      <p class="dialog-footnote">Last updated 11 September 2026. This notice describes the current open testing implementation. It does not create a promise of a particular provider's retention or availability.</p>
     </section>
   </main>
   <footer>

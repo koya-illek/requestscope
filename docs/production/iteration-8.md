@@ -1,5 +1,11 @@
 # Production Iteration 8 Plan (2026-08-22)
 
+> **Historical plan.** The findings listed below (Turnstile suffix, CSP
+> wildcards, CT truncation, takeover signatures, public-target derived
+> fetches, request budget) were implemented on later `main` commits. Do not
+> treat this file as a current defect list. The note that the live Worker was
+> a stale pre-round-2 build described that pass only.
+
 Branch `production/iteration-8` (from `production/iteration-7`). Repo: /home/koya/requestscope.
 Live URL https://requestscope.illek.ie re-probed this pass: `/api/health` still returns
 `"environment":"production"`, the HTML CSP still carries `style-src 'unsafe-inline'`, and

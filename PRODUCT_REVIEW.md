@@ -1,5 +1,15 @@
 # RequestScope product review
 
+> **Historical (2026-08-14).** Several findings in this document were fixed in
+> later releases and must not be treated as open bugs. In particular: derived
+> JS/takeover fetches now go through `fetchPublicUrl` and the public-target
+> gate; a whole-request `RequestBudget` exists (45 subrequests, 1 MiB body,
+> 6-wide, 15s); takeover probes use `redirect: "manual"`; Turnstile classifier
+> anchoring and related iteration-8 correctness bugs were addressed on `main`.
+> For current open-testing constraints (intentionally unauthenticated MCP /
+> url-risk, rate limits, residual DNS rebinding) see `README.md`,
+> `SECURITY.md`, and `web/privacy.html`.
+
 Review date: 2026-08-14  
 Scope: `/home/koya/requestscope` and `https://requestscope.illek.ie`  
 Review mode: read-only. This review does not change product code, configuration, deployment, DNS, databases, or other external state.

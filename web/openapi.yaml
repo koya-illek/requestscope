@@ -59,7 +59,7 @@ paths:
             schema: { $ref: '#/components/schemas/ScanRequest' }
             example: { url: 'https://example.com', mapDependencies: true }
       responses:
-        '201': { description: Completed or partial trace report, headers: { Location: { schema: { type: string }, description: Retrieval path of the stored report } }, content: { application/json: { schema: { $ref: '#/components/schemas/ScanReport' } } } }
+        '201': { description: Completed or partial trace report, headers: { Location: { schema: { type: string }, description: Retrieval path of the stored report }, 'X-RequestScope-Recent-Observation': { schema: { type: string, enum: [fresh, reused] }, description: Whether this hashed client reused a five-minute observation } }, content: { application/json: { schema: { $ref: '#/components/schemas/ScanReport' } } } }
         '400': { description: Invalid input }
         '403': { description: Disallowed or non-public target }
         '429': { description: Request limit reached }
@@ -80,7 +80,7 @@ paths:
     get:
       operationId: getRequestScopeReport
       summary: Retrieve an unexpired trace report
-      description: Stored reports are immutable, so each response carries a strong ETag built from the report ID and conditional requests with If-None-Match answer 304 without a body. The daily retrieval quota is charged before the condition is evaluated.
+      description: Stored reports are immutable, so each response carries a strong ETag built from the report ID and conditional requests with If-None-Match answer 304 without a body. A missing or expired ID is a 404 without consuming retrieval quota. Existing reports, including 304 responses, consume the daily retrieval quota.
       parameters:
         - { name: reportId, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{16}$' } }
       responses:
@@ -96,7 +96,7 @@ paths:
         responses:
           '200': { description: The GET headers with an empty body }
           '404': { description: Report not found or expired }
-          '429': { description: Retrieval quota reached; the probe still consumes quota before existence is checked }
+          '429': { description: Retrieval quota reached for an existing report; missing IDs are 404 without consuming quota }
   /api/scans/{reportId}/export:
     get:
       operationId: exportRequestScopeReport
@@ -117,7 +117,7 @@ paths:
         responses:
           '200': { description: The GET headers with an empty body, including Content-Disposition attachment }
           '404': { description: Report not found or expired }
-          '429': { description: Retrieval quota reached; the probe still consumes quota before existence is checked }
+          '429': { description: Retrieval quota reached for an existing report; missing IDs are 404 without consuming quota }
   /api/v1/url-risk:
     post:
       operationId: assessUrlRisk
@@ -152,7 +152,7 @@ paths:
     post:
       operationId: invokeRequestScopeMcp
       summary: Invoke the RequestScope Streamable HTTP MCP endpoint
-      description: JSON-RPC MCP endpoint for trace_request, assess_url_risk, and get_requestscope_report. Handshake and discovery are read-only. Tool calls are bounded and may require a bearer credential when COPILOT_API_KEY is configured. A tool call that carries params._meta.progressToken and accepts text/event-stream receives notifications/progress events while the trace runs, followed by the ordinary JSON-RPC response as the final message event; without a progressToken the response is a single JSON document.
+      description: JSON-RPC MCP endpoint for trace_request, assess_url_risk, and get_requestscope_report. Intentionally open for testing when COPILOT_API_KEY is unset; tool calls are bounded by MCP_DAILY_LIMIT (25) and mapped traces cost two units. Handshake and discovery are read-only. A bearer credential is required only when COPILOT_API_KEY is configured. A tool call that carries params._meta.progressToken and accepts text/event-stream receives notifications/progress events while the trace runs, followed by the ordinary JSON-RPC response as the final message event; without a progressToken the response is a single JSON document.
       security:
         - {}
         - bearerAuth: []
@@ -250,6 +250,7 @@ components:
         summary: { type: object, additionalProperties: true }
         coverage: { $ref: '#/components/schemas/ScanCoverage' }
         provenance: { $ref: '#/components/schemas/ReportProvenance' }
+        reusedRecentObservation: { type: boolean, description: True on a create or stream response when the same hashed client reused a five-minute observation. Not persisted in D1. }
     ScanCoverage:
       type: object
       required: [status, budget, phases]
@@ -320,7 +321,7 @@ components:
           description: Set true only after the user agrees that the original and final URL including query values may be sent to Google Web Risk and PhishTank; Cloudflare's malware-filtering DNS receives hostnames only.
     UrlRiskAssessment:
       type: object
-      required: [schemaVersion, verdict, riskScore, confidence, summary, traceId, findings, reputation, limitations]
+      required: [schemaVersion, verdict, riskScore, confidence, summary, requestedUrl, finalUrl, traceId, reportPath, claimedOrganisation, services, findings, reputation, limitations]
       properties:
         schemaVersion: { type: integer, enum: [1] }
         verdict: { type: string, enum: [low, medium, high] }

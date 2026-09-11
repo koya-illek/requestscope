@@ -77,8 +77,9 @@ describe("API routing and input boundary", () => {
     expect(response.status).toBe(201);
     // A created report advertises its retrieval path per REST conventions.
     expect(response.headers.get("location")).toBe("/api/scans/cached-report");
+    expect(response.headers.get("x-requestscope-recent-observation")).toBe("reused");
     expect(rateLimitChecks).toBe(1);
-    expect(await response.json()).toEqual(cachedReport);
+    expect(await response.json()).toEqual({ ...cachedReport, reusedRecentObservation: true });
   });
 
   it("bypasses scan accounting for an owner IP stored in a Worker secret", async () => {
@@ -95,7 +96,7 @@ describe("API routing and input boundary", () => {
       body: JSON.stringify({ url: "https://example.com" }),
     }), { ...env, DB: db, RATE_LIMIT_BYPASS_IPS: "198.51.100.7, 203.0.113.42" }, ctx);
     expect(response.status).toBe(201);
-    expect(await response.json()).toEqual(cachedReport);
+    expect(await response.json()).toEqual({ ...cachedReport, reusedRecentObservation: true });
     expect(db.prepare).not.toHaveBeenCalled();
   });
 
@@ -165,6 +166,59 @@ describe("API routing and input boundary", () => {
     }), { ...env, DB: db }, ctx);
     expect(servedKeys[2]).not.toBe(servedKeys[0]);
     expect(new Set(servedKeys).size).toBe(2);
+  });
+
+  it("does not share the recent-scan cache across clients", async () => {
+    const servedKeys: string[] = [];
+    const db = { prepare: vi.fn(() => ({
+      bind: vi.fn(() => ({ first: vi.fn(async () => ({ request_count: 1 })) })),
+    })) } as unknown as D1Database;
+    vi.stubGlobal("caches", {
+      open: vi.fn(async () => ({
+        match: vi.fn(async (key: Request) => {
+          servedKeys.push(key.url);
+          return new Response(JSON.stringify({ id: "client-report" }));
+        }),
+      })),
+    });
+    for (const ip of ["203.0.113.10", "203.0.113.11"]) {
+      await worker.fetch(new Request("https://api.example/api/scans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "CF-Connecting-IP": ip },
+        body: JSON.stringify({ url: "https://example.com" }),
+      }), { ...env, DB: db }, ctx);
+    }
+    expect(servedKeys).toHaveLength(2);
+    expect(servedKeys[0]).not.toBe(servedKeys[1]);
+  });
+
+  it("defaults MCP traces off the dependency map and charges two units when it is enabled", async () => {
+    const servedKeys: string[] = [];
+    const increments: number[] = [];
+    const db = { prepare: vi.fn(() => ({
+      bind: vi.fn((...values: unknown[]) => {
+        if (typeof values[2] === "number") increments.push(values[2]);
+        return { first: vi.fn(async () => ({ request_count: 1 })) };
+      }),
+    })) } as unknown as D1Database;
+    vi.stubGlobal("caches", {
+      open: vi.fn(async () => ({
+        match: vi.fn(async (key: Request) => {
+          servedKeys.push(key.url);
+          return new Response(JSON.stringify({ id: "mcp-report", urlRisk: { verdict: "low" } }));
+        }),
+      })),
+    });
+    const mcpCall = (args: Record<string, unknown>) => worker.fetch(new Request("https://api.example/mcp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "trace_request", arguments: args } }),
+    }), { ...env, DB: db }, ctx);
+
+    expect((await mcpCall({ url: "https://example.com" })).status).toBe(200);
+    expect((await mcpCall({ url: "https://example.com", mapDependencies: true })).status).toBe(200);
+    expect(servedKeys[0]).not.toBe(servedKeys[1]);
+    expect(increments).toEqual([1, 2]);
   });
 
   it("rejects non-boolean mobile profile requests by name", async () => {
@@ -262,7 +316,7 @@ describe("API routing and input boundary", () => {
     expect(first.status).toBe(200);
     const events = (await first.text()).trim().split("\n").map((line) => JSON.parse(line));
     expect(events[0]).toMatchObject({ type: "progress", stage: "accepted" });
-    expect(events.at(-1)).toMatchObject({ type: "result", report: cachedReport });
+    expect(events.at(-1)).toMatchObject({ type: "result", report: { ...cachedReport, reusedRecentObservation: true } });
 
     const second = await worker.fetch(streamRequest(), { ...env, DAILY_SCAN_LIMIT: "1", DB: db }, ctx);
     expect(second.status).toBe(429);
@@ -370,11 +424,21 @@ describe("API routing and input boundary", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(report);
     expect(prepare).toHaveBeenCalledTimes(2);
-    expect(prepare.mock.calls[0][0]).toMatch(/^\s*INSERT INTO rate_limits/i);
-    expect(prepare.mock.calls[1][0]).toMatch(/^\s*SELECT/i);
+    expect(prepare.mock.calls[0][0]).toMatch(/^\s*SELECT/i);
+    expect(prepare.mock.calls[1][0]).toMatch(/^\s*INSERT INTO rate_limits/i);
     // Stored reports are immutable, so the report ID is published as a
     // strong validator for conditional retrieval.
     expect(response.headers.get("etag")).toBe('"abcdefghijklmnop"');
+  });
+
+  it("does not write rate-limit rows for a well-formed missing report ID", async () => {
+    const prepare = vi.fn((sql: string) => ({
+      bind: vi.fn(() => ({ first: vi.fn(async () => sql.trimStart().startsWith("SELECT") ? undefined : { request_count: 1 }) })),
+    }));
+    const response = await worker.fetch(new Request("https://api.example/api/scans/abcdefghijklmnop"), { ...env, DB: { prepare } as unknown as D1Database }, ctx);
+    expect(response.status).toBe(404);
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(prepare.mock.calls[0][0]).toMatch(/^\s*SELECT/i);
   });
 
   it("serves stored reports conditionally and keeps the quota charged on a hit", async () => {
@@ -393,7 +457,7 @@ describe("API routing and input boundary", () => {
       expect(response.headers.get("cache-control")).toBe("private, max-age=60");
     }
     // Every 304 still consumed quota and re-read D1: two prepare calls
-    // (rate-limit write, report select) per conditional request.
+    // (report select, then rate-limit write) per conditional request.
     expect(prepare).toHaveBeenCalledTimes(8);
     const miss = await worker.fetch(new Request("https://api.example/api/scans/abcdefghijklmnop", {
       headers: { "If-None-Match": '"different-report-id"' },
@@ -427,7 +491,7 @@ describe("rate-limited public access", () => {
     // creation Location, Retry-After, or export disposition at all, so
     // browser-based integrators could never implement conditional GETs or
     // honour the back-off hint.
-    expect(response.headers.get("access-control-expose-headers")).toBe("ETag, Location, Retry-After, Content-Disposition");
+    expect(response.headers.get("access-control-expose-headers")).toBe("ETag, Location, Retry-After, Content-Disposition, X-RequestScope-Recent-Observation");
   });
 });
 
