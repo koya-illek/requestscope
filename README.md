@@ -1,20 +1,22 @@
 # RequestScope
 
-An Illek project.
+See where a URL leads and what happens along the way. Inspect DNS answers,
+redirects, HTTP responses and URL risk evidence in one report.
 
-RequestScope shows every observable step between a URL and the page it delivers.
-It performs an evidence-labelled DNS and HTTP trace, follows redirects manually,
-inspects response and cache behaviour, extracts bounded HTML resource references,
-creates a privacy-redacted shareable report, and produces an explainable URL
-security risk assessment suitable for people or Copilot agents.
+[Open RequestScope](https://requestscope.illek.ie) · [More Illek tools](https://tools.illek.ie)
 
-Live at [requestscope.illek.ie](https://requestscope.illek.ie).
+![RequestScope interface with a URL input and optional trace settings](docs/assets/product-screenshot.png)
 
-![RequestScope architecture: a public caller is gated, dual-resolved over DNS, traced hop by hop, then stored as a redacted D1 report for the browser or an MCP agent](docs/assets/requestscope-architecture.png)
+*Live interface captured on 12 September 2026.*
 
-The infographic is a conceptual overview of that path. The compact flowchart
-below is the technical request path; [ARCHITECTURE.md](ARCHITECTURE.md) is the
-component, data-disclosure, and flow deep dive.
+## Try it
+
+Enter a public URL you own or have permission to inspect and select **Trace request**.
+Use the report to understand redirects, response headers and the evidence behind
+risk findings. REST and MCP interfaces support the same diagnostic engine.
+
+Observations come from Cloudflare's network. They do not measure your browser's
+DNS, TCP or TLS timings, and a risk assessment is not a guarantee of safety.
 
 ## Contents
 
@@ -254,6 +256,12 @@ The site owner can exempt trusted source IPs from scan and MCP scan limits by
 setting the `RATE_LIMIT_BYPASS_IPS` Worker secret to a comma-separated list.
 This value must never be placed in `wrangler.toml`; report retrieval limits and
 all upstream provider quotas still apply.
+
+## Feedback and contributions
+
+Found a problem? [Report a bug](https://github.com/koya-illek/requestscope/issues/new?template=bug_report.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for fixes and feature proposals, or
+[SECURITY.md](SECURITY.md) to report a vulnerability.
 
 ## License
 
