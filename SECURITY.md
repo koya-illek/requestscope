@@ -95,3 +95,13 @@ Validated scans, MCP tool calls, existing-report reads, and provider quota
 accounting are bounded and durable in D1 with hashed client keys. MCP handshake
 or discovery messages do not write rate-limit rows. A well-formed but missing
 report ID is a D1 SELECT and a 404 — it does not insert a `rate_limits` row.
+
+## Report a vulnerability
+
+Report security vulnerabilities through [GitHub private vulnerability reporting](https://github.com/koya-illek/requestscope/security/advisories/new). Include the affected commit or version, reproduction steps, and the expected and observed behaviour.
+
+Do not include credentials or personal data. Avoid public issues for vulnerabilities until a fix is available.
+
+## Supported versions
+
+Security fixes target the latest code on `main`. Older releases do not receive separate security updates.
