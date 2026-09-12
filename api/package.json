@@ -16,6 +16,6 @@
     "wrangler": "^4.125.0"
   },
   "dependencies": {
-    "tldts": "^7.4.10"
+    "tldts": "^7.4.12"
   }
 }
