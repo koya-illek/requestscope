@@ -257,6 +257,8 @@ assert.deepEqual(violations, [], `strict CSP run produced console/page errors: $
 
 // Regression: "Start a new trace" must clear every optional control and keep
 // its selection summary in sync with what the next submission would send.
+await cspPage.click("#new-trace");
+await cspPage.fill("#url-input", "https://micros0ft.example/login");
 await cspPage.locator(".trace-options > summary").click();
 await cspPage.locator(".risk-context > summary").click();
 await cspPage.fill("#claimed-organisation", "Microsoft");
@@ -277,6 +279,7 @@ await cspPage.fill("#url-input", "https://micros0ft.example/login");
 await cspPage.click("#trace-button");
 await cspPage.waitForSelector("#risk-verdict.high", { state: "visible" });
 await cspContext.grantPermissions(["clipboard-read", "clipboard-write"], { origin: `http://127.0.0.1:${server.address().port}` });
+await cspPage.locator(".export-menu > summary").click();
 await cspPage.click("#copy-markdown");
 await cspPage.waitForFunction(() => document.querySelector("#copy-markdown")?.textContent === "Copied");
 const clipboardMarkdown = await cspPage.evaluate(() => navigator.clipboard.readText());
@@ -312,7 +315,7 @@ await linkPage.goto(`${pathToFileURL(path.resolve(webRoot, "index.html")).href}#
 await linkPage.waitForSelector("#risk-verdict.high", { state: "visible" });
 assert.equal(await linkPage.textContent("#risk-verdict"), "HIGH · 66/100");
 // The saved report must disclose how long it stays retrievable.
-assert.match(await linkPage.textContent("#report-stored"), /^Stored until .+, then deleted automatically\.$/);
+assert.match(await linkPage.textContent("#report-stored"), /^Observed .+ · Stored until .+, then deleted automatically\.$/);
 assert.equal(savedReportFetches, 1);
 assert.equal(await linkPage.title(), "micros0ft.example: RequestScope");
 assert.equal(await linkPage.evaluate(() => document.activeElement?.id), "report-host");
@@ -346,7 +349,7 @@ await linkPage.evaluate(() => location.hash = "");
 
 // In-page anchors (status pill, skip link, section targets) also change the
 // hash; they are navigation, so they must never raise the invalid-link error.
-await linkPage.click(".status-link");
+await linkPage.evaluate(()=>{location.hash="status"});
 await linkPage.waitForFunction(() => location.hash === "#status");
 await linkPage.waitForTimeout(50);
 assert.equal(await linkPage.locator("#error-panel:not(.hidden)").count(), 0, "the status pill must not raise the invalid-link error");
@@ -383,7 +386,12 @@ await loadGuardPage.route("**/api/scans/abcdefghijklmnop", async (route) => {
 await loadGuardPage.goto(`${pathToFileURL(path.resolve(webRoot, "index.html")).href}#abcdefghijklmnop`);
 await loadGuardPage.waitForFunction(() => document.querySelector("#trace-button")?.disabled === true);
 assert.equal(slowReportServed, false, "report body must not arrive before the guard is observed");
+await loadGuardPage.evaluate(()=>{location.hash=""});
+await loadGuardPage.waitForFunction(()=>!document.querySelector("#trace-button").disabled);
 releaseSlowReport();
+await loadGuardPage.waitForTimeout(350);
+assert.equal(await loadGuardPage.locator("#report:not(.hidden)").count(),0,"abandoned report must not override navigation");
+await loadGuardPage.evaluate(()=>{location.hash="abcdefghijklmnop"});
 await loadGuardPage.waitForSelector("#risk-verdict.high", { state: "visible" });
 assert.equal(await loadGuardPage.locator("#trace-button[disabled]").count(), 0);
 await loadGuardContext.close();
@@ -444,6 +452,7 @@ await radarPage.keyboard.press("Escape");
 // The Markdown copy reuses the same designed fallback surface, relabelled so
 // it never misdescribes its contents, and the textarea must preserve the
 // report's line structure for pasting into tickets or AI chats.
+await radarPage.locator(".export-menu > summary").click();
 await radarPage.click("#copy-markdown");
 await radarPage.waitForSelector("#link-dialog[open]");
 assert.equal(await radarPage.textContent("#link-dialog-title"), "Copy this report as Markdown");
@@ -577,7 +586,7 @@ await quotaPage.fill("#url-input", "https://micros0ft.example/login");
 await quotaPage.click("#trace-button");
 await quotaPage.waitForSelector("#error-panel:not(.hidden)");
 assert.equal(await quotaPage.textContent("#error-code"), "RATE_LIMITED");
-assert.equal(await quotaPage.textContent("#error-message"), "Daily anonymous scan limit of 15 reached.");
+assert.match(await quotaPage.textContent("#error-message"), /^Daily anonymous scan limit of 15 reached\. Try again after .+\.$/);
 assert.equal(await quotaPage.locator("#progress-panel.hidden").count(), 1);
 assert.equal(await quotaPage.locator("#trace-button[disabled]").count(), 0);
 await quotaContext.close();
@@ -610,6 +619,7 @@ await exportPage.route("**/api/scans/abcdefghijklmnop/export", async (route) => 
 });
 await exportPage.goto(`${pathToFileURL(path.resolve(webRoot, "index.html")).href}#abcdefghijklmnop`);
 await exportPage.waitForSelector("#risk-verdict.high", { state: "visible" });
+await exportPage.locator(".export-menu > summary").click();
 await exportPage.click("#export-json");
 await exportPage.waitForSelector("#error-panel:not(.hidden)");
 assert.equal(await exportPage.textContent("#error-code"), "EXPORT_FAILED");

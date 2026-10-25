@@ -17,6 +17,7 @@
   const reportCache = new Map();
   const REPORT_CACHE_LIMIT = 5;
 
+  let viewRevision=0;
   let inFlight = false;
   let cancelRequested = false;
   let activeController = null;
@@ -119,8 +120,12 @@
     input.focus();
   });
   window.addEventListener("hashchange", () => {
-    if (inFlight) return;
     const id = location.hash.slice(1);
+    if (REPORT_ID_PATTERN.test(id) || !id || !document.getElementById(id)) {
+      viewRevision++;
+      activeController?.abort();activeController=null;inFlight=false;
+      traceButton.disabled=false;stopProgress();
+    }
     if (REPORT_ID_PATTERN.test(id)) {
       if (state.report?.id !== id || reportPanel.classList.contains("hidden")) loadReport(id);
       return;
@@ -129,7 +134,7 @@
     // a hash that names an element on this page is navigation, not a broken
     // report link, so only unknown hashes surface the invalid-link notice.
     if (!id) {
-      if (state.report) reset(false);
+      reset(false);
     } else if (!document.getElementById(id)) {
       showError("That report link looks incomplete or invalid.", "INVALID_LINK");
     }
@@ -164,6 +169,7 @@
 
   async function runTrace(url) {
     if (inFlight || !url.trim()) return;
+    viewRevision++;
     inFlight = true;
     cancelRequested = false;
     state.rawUrl = url.trim();
@@ -209,12 +215,19 @@
         } catch {
           // Non-JSON error body; keep the generic HTTP message.
         }
+        if(response.status===429){
+          const retry=response.headers.get("Retry-After");
+          const seconds=Number(retry);const at=retry?(Number.isFinite(seconds)?Date.now()+seconds*1000:Date.parse(retry)):NaN;
+          if(Number.isFinite(at))message+=` Try again after ${new Date(at).toLocaleString()}.`;
+        }
         throw Object.assign(new Error(message), { errorCode: response.status === 429 ? "RATE_LIMITED" : "TRACE_FAILED" });
       }
       const payload = await readTraceStream(response, armIdleTimer);
+      if(activeController!==controller)return;
       finishProgress();
       displayReport(payload, true);
     } catch (error) {
+      if(activeController!==controller)return;
       stopProgress();
       if (error.name === "AbortError") {
         showError(cancelRequested
@@ -227,6 +240,7 @@
       }
     } finally {
       clearTimeout(idleTimer);
+      if(activeController!==controller)return;
       activeController = null;
       inFlight = false;
       traceButton.disabled = false;
@@ -235,12 +249,10 @@
 
   async function loadReport(id) {
     if (inFlight) return;
+    viewRevision++;
     inFlight = true;
     cancelRequested = false;
     state.rawUrl = null;
-    // The submit control must agree with the inFlight guard: runTrace bails
-    // silently while a load is active, so leaving the button enabled would
-    // turn a press into an invisible no-op.
     traceButton.disabled = true;
     beginProgress("Loading saved report", true);
     errorPanel.classList.add("hidden");
@@ -262,6 +274,7 @@
         signal: controller.signal,
         headers: cached ? { "If-None-Match": cached.etag } : {},
       });
+      if(activeController!==controller)return;
       armIdleTimer();
       if (response.status === 304 && cached) {
         // The server confirmed the session copy is still current.
@@ -282,6 +295,7 @@
       const payload = await response.json().catch(() => {
         throw new Error("Received an invalid response from the server.");
       });
+      if(activeController!==controller)return;
       const etag = response.headers.get("ETag");
       if (etag) {
         reportCache.delete(id);
@@ -293,6 +307,7 @@
       finishProgress();
       displayReport(payload, false);
     } catch (error) {
+      if(activeController!==controller)return;
       stopProgress();
       if (error.name === "AbortError") {
         showError(cancelRequested
@@ -307,6 +322,7 @@
       }
     } finally {
       clearTimeout(idleTimer);
+      if(activeController!==controller)return;
       activeController = null;
       inFlight = false;
       traceButton.disabled = false;
@@ -362,7 +378,8 @@
     state.routeStep = 6;
     updateProgressSteps();
     $("#progress-bar").style.width = "100%";
-    setTimeout(() => progressPanel.classList.add("hidden"), 250);
+    const revision=viewRevision;
+    setTimeout(() => {if(revision===viewRevision)progressPanel.classList.add("hidden")}, 250);
   }
 
   function stopProgress() {
@@ -377,7 +394,13 @@
     scrollToEl(errorPanel);
   }
 
+  function reportHeading(level){
+    const old=$("#report-host");if(old.tagName===`H${level}`)return;
+    const title=document.createElement(`h${level}`);title.id=old.id;title.tabIndex=-1;title.textContent=old.textContent;old.replaceWith(title);
+    document.querySelectorAll("#report .section-heading h3, #report .panel-header h3").forEach(old=>{if(level!==1)return;const heading=document.createElement("h2");heading.innerHTML=old.innerHTML;heading.id=old.id;old.replaceWith(heading)});
+  }
   function displayReport(report, updateLocation) {
+    reportHeading(1);
     state.report = report;
     $("#report-host").textContent = report.hostname;
     $("#report-url").textContent = report.finalUrl || report.normalizedUrl;
@@ -405,7 +428,7 @@
     // A share recipient must know how long the evidence stays retrievable
     // instead of discovering it through a 404 after expiry.
     if (storedUntil) {
-      storedNote.textContent = `Stored until ${storedUntil}, then deleted automatically.`;
+      storedNote.textContent = `${observationTime(report)} · Stored until ${storedUntil}, then deleted automatically.`;
       storedNote.classList.remove("hidden");
     } else {
       storedNote.classList.add("hidden");
@@ -431,7 +454,8 @@
       state.historyState = { reportId: report.id };
     }
     document.title = `${report.hostname}: RequestScope`;
-    setTimeout(() => scrollToEl(reportPanel, "start"), 280);
+    const revision=viewRevision;
+    setTimeout(() => {if(revision===viewRevision&&state.report?.id===report.id)scrollToEl(reportPanel, "start")}, 280);
   }
 
   const COVERAGE_PHRASES = {
@@ -485,7 +509,7 @@
     $("#risk-findings").innerHTML = risk.findings.length
       ? risk.findings.map((item) => `<article class="risk-finding ${enumToken(item.severity, ["low", "medium", "high"])}">
           <span>${escapeHtml(String(item.severity).toUpperCase())}</span>
-          <div><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.detail)}</p><code>${escapeHtml(item.code)} · ${escapeHtml(item.source)} · +${Number(item.score) || 0}</code></div>
+          <div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.detail)}</p><code>${escapeHtml(item.code)} · ${escapeHtml(item.source)} · +${Number(item.score) || 0}</code></div>
         </article>`).join("")
       : `<p class="dns-empty">No strong risk indicators were observed.</p>`;
     $("#risk-boundary").textContent = risk.limitations.join(" ");
@@ -660,7 +684,7 @@
     $("#findings").innerHTML = findings.length ? findings.map((item) => `<article class="finding ${enumToken(item.severity, ["info", "positive", "warning", "critical"])}">
       <span class="finding-dot" aria-hidden="true"></span>
       <span class="visually-hidden">${escapeHtml(item.severity)}</span>
-      <div><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.detail)}</p><div class="finding-meta"><button type="button" class="evidence-link" title="Show this evidence in the report" data-path="${escapeAttr(item.evidencePath)}">${escapeHtml(item.evidencePath)}</button><span> · ${escapeHtml(item.confidence)} confidence</span></div></div>
+      <div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.detail)}</p><div class="finding-meta"><button type="button" class="evidence-link" title="Show this evidence in the report" data-path="${escapeAttr(item.evidencePath)}">${escapeHtml(item.evidencePath)}</button><span> · ${escapeHtml(item.confidence)} confidence</span></div></div>
     </article>`).join("") : `<div class="dns-group"><p class="dns-empty">No derived findings were generated.</p></div>`;
   }
 
@@ -753,8 +777,13 @@
   /** A paste-ready evidence brief for tickets and AI chats, rendered from the
    * same redacted report the UI shows; nothing here is fetched or decrypted
    * beyond what the server already stored. */
+  function observationTime(report){
+    const observed=Date.parse(report.createdAt);
+    const age=Number.isFinite(observed)?Math.max(0,Math.floor((Date.now()-observed)/60000)):null;
+    return `Observed ${age===null?"at unknown time":`${new Date(observed).toLocaleString()} · ${age} min ago`}${report.reusedRecentObservation?" · Recent observation reused (five-minute cache)":""}`;
+  }
   function buildReportMarkdown(report) {
-    const lines = [`# RequestScope report: ${report.hostname}`, ""];
+    const lines = [`# RequestScope report: ${report.hostname}`, "", observationTime(report), ""];
     const risk = report.urlRisk;
     if (risk) {
       lines.push(
@@ -950,6 +979,9 @@
   }
 
   function reset(pushHistory = true) {
+    viewRevision++;
+    reportHeading(2);
+    activeController?.abort();activeController=null;inFlight=false;traceButton.disabled=false;stopProgress();
     state.report = null;
     state.rawUrl = null;
     reportPanel.classList.add("hidden");
