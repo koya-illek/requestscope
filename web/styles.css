@@ -657,16 +657,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 100px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 .brand.small { font-size: 15px; color: var(--text); }
 .brand.small .brand-mark { transform: scale(.72); transform-origin: left; width: 20px; }
-dialog {
-  width: min(680px, calc(100% - 32px));
-  padding: 38px;
-  border: 1px solid var(--line-bright);
-  background: #0a1613;
-  color: var(--text);
-  box-shadow: 0 40px 140px #000;
-}
-dialog::backdrop { background: rgba(1, 8, 6, .82); backdrop-filter: blur(8px); }
-dialog h2 { margin: 0 0 30px; font-size: 32px; letter-spacing: -.04em; }
+dialog{width:min(680px,calc(100% - 32px));padding:38px;border:1px solid var(--line-bright);background:#0a1613;color:var(--text);box-shadow:0 40px 140px #000;}dialog::backdrop{background:rgba(1,8,6,.82);backdrop-filter:blur(8px);}dialog h2 { margin: 0 0 30px; font-size: 32px; letter-spacing: -.04em; }
 .dialog-close {
   position: absolute; top: 9px; right: 9px;
   width: 44px; height: 44px; min-width: 44px; min-height: 44px;
@@ -702,7 +693,6 @@ dialog h2 { margin: 0 0 30px; font-size: 32px; letter-spacing: -.04em; }
   cursor: pointer;
 }
 .primary-button:hover { background: var(--accent-2); }
-.dialog-field-label { display: block; margin-top: 20px; color: var(--muted); font: 500 10px/1.5 var(--mono); text-transform: uppercase; letter-spacing: .12em; }
 .dialog-field-label { display: block; margin-top: 20px; color: var(--muted); font: 500 10px/1.5 var(--mono); text-transform: uppercase; letter-spacing: .12em; }
 .dialog-field-label textarea {
   width: 100%;
@@ -887,3 +877,5 @@ body:has(#report:not(.hidden)) .hero h1 { display:none; }
 @media print { #new-trace-top { display: none; } }
 
 .risk-overview{margin-block:20px 28px;}.risk-overview .panel-header{flex-wrap:wrap;gap:12px;}.risk-overview .risk-summary{grid-template-columns:1fr;gap:12px;}.transport-note,.trace-status{color:var(--muted);line-height:1.6;}.trace-status:empty{display:none;}.evidence-reference{inline-size:100%;}.evidence-reference summary{cursor:pointer;padding-block:10px;}.evidence-reference .evidence-path{display:block;margin-block:8px 12px;inline-size:100%;resize:vertical;color:var(--text);background:var(--surface);border:1px solid var(--line);padding:8px;}@media (max-width:600px){.ssl-grid{grid-template-columns:minmax(0,1fr);}.ssl-row{display:grid;grid-template-columns:1fr;gap:8px;}.ssl-label{font-size:12px;line-height:1.5;letter-spacing:.02em;}.ssl-value{text-align:start;font-size:13px;line-height:1.5;overflow-wrap:anywhere;}}
+
+dialog:modal{overscroll-behavior:contain}dialog::backdrop{overflow:hidden;overscroll-behavior:contain}
