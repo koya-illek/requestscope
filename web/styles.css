@@ -262,7 +262,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 #error-close:hover { color: var(--text); }
 .report { padding: 48px 0 90px; }
 .report-header { display: flex; justify-content: space-between; gap: 30px; align-items: end; border-bottom: 1px solid var(--line); padding-bottom: 34px; }
-.report-header h2 { margin: 0 0 8px; font-size: clamp(32px, 5vw, 54px); letter-spacing: -.05em; }
+#report-host { margin: 0 0 8px; font-size: clamp(32px, 5vw, 54px); letter-spacing: -.05em; }
 .report-header > div > a { display: block; max-width: 700px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font: 400 12px/1.5 var(--mono); white-space: nowrap; }
 .report-stored { margin: 8px 0 0; color: var(--muted); font: 400 11px/1.5 var(--mono); }
 .report-actions { display: flex; gap: 8px; flex-shrink: 0; }
@@ -286,7 +286,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
 .section-heading > div, .panel-header > div { display: flex; align-items: center; gap: 14px; }
 .section-number { color: var(--accent); font: 500 10px/1 var(--mono); }
-.section-heading h3, .panel-header h3 { margin: 0; font-size: 18px; }
+.section-heading :is(h2,h3), .panel-header :is(h2,h3) { margin: 0; font-size: 18px; }
 .section-heading p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
 .evidence-badge { padding: 6px 8px; border: 1px solid var(--line); color: var(--muted); font: 500 9px/1 var(--mono); letter-spacing: .1em; }
 .timeline { position: relative; margin-bottom: 70px; }
@@ -363,7 +363,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .dns-answer code { color: var(--text); overflow-wrap: anywhere; }
 .dns-empty { font: 400 11px/1.4 var(--mono); }
 .page-signals { padding: 16px 20px 18px; border-bottom: 1px solid var(--line); background: rgba(8, 17, 15, .42); }
-.page-signals h4 { margin: 0; color: var(--text); font-size: 12px; }
+.page-signals :is(h3,h4) { margin: 0; color: var(--text); font-size: 12px; }
 .page-signals-note { margin: 4px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .signal-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
 .signal-chip { padding: 6px 9px; border: 1px solid var(--line-bright); color: var(--muted); font: 400 10px/1 var(--mono); }
@@ -375,17 +375,18 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .finding.warning .finding-dot { background: var(--warning); }
 .finding.critical .finding-dot { background: var(--critical); }
 .finding.positive .finding-dot { background: var(--accent); }
-.finding h4 { margin: 0 0 6px; font-size: 13px; }
+.finding :is(h3,h4) { margin: 0 0 6px; font-size: 13px; }
 .finding p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .finding code { display: block; margin-top: 8px; color: var(--muted); font: 400 9px/1 var(--mono); }
-.finding-meta { display: flex; align-items: baseline; gap: 4px; margin-top: 8px; }
-.finding-meta > span { color: var(--muted); font: 400 9px/1 var(--mono); }
+.finding-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-top: 8px; }
+.finding-meta > span { color: var(--muted); font: 400 12px/1.5 var(--mono); }
+.finding-meta .evidence-path { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; font: 400 11px/1.5 var(--mono); }
 .evidence-link {
-  padding: 2px 0;
+  padding: 8px 0;
   border: 0;
   background: none;
   color: var(--muted);
-  font: 400 9px/1 var(--mono);
+  font: 400 12px/1.5 var(--mono);
   text-align: left;
   text-decoration: underline dotted;
   text-underline-offset: 3px;
@@ -434,7 +435,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .trace-options > summary small { display: block; }
 .trace-options > summary strong { color: var(--text); font-size: 13px; }
 .trace-options > summary small { margin-top: 3px; color: var(--muted); font: 400 12px/1.5 var(--mono); }
-.trace-options-state { color: var(--accent); font: 600 9px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+.trace-options-state { color: var(--accent); font: 600 12px/1.5 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
 .trace-options-body { padding: 0 15px 16px; border-top: 1px solid var(--line); }
 .deps-toggle {
   display: flex; align-items: flex-start; gap: 12px;
@@ -447,7 +448,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 
 .risk-context { max-width: 900px; margin-top: 12px; border: 1px solid var(--line); background: rgba(10, 22, 19, .5); }
 .risk-context summary { min-height: 44px; padding: 13px 15px; color: var(--text); font: 500 11px/1.4 var(--mono); cursor: pointer; }
-.risk-context summary span { margin-left: 7px; color: var(--muted); font-size: 9px; text-transform: uppercase; }
+.risk-context summary span { margin-left: 7px; color: var(--muted); font-size: 12px; text-transform: uppercase; }
 .risk-context-grid { display: grid; grid-template-columns: minmax(180px, .7fr) 1.3fr; gap: 14px; padding: 0 15px 14px; }
 .risk-context label { color: var(--muted); font: 500 10px/1.5 var(--mono); }
 .risk-context input, .risk-context textarea { width: 100%; margin-top: 6px; padding: 10px 11px; border: 1px solid var(--line-bright); outline: 0; background: #08110f; color: var(--text); font: 400 12px/1.5 var(--mono); resize: vertical; }
@@ -465,7 +466,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .risk-verdict.high { border-color: rgba(255, 98, 110, .45); color: var(--critical); }
 .risk-summary { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; padding: 20px; border-bottom: 1px solid var(--line); }
 .risk-summary strong { font-size: 13px; }
-.risk-summary span { color: var(--muted); font: 400 9px/1.4 var(--mono); white-space: nowrap; }
+.risk-summary span { max-width: 65ch; color: var(--muted); font: 400 12px/1.5 var(--mono); }
 .reputation-results { padding: 18px 20px; border-bottom: 1px solid var(--line); background: rgba(8, 17, 15, .42); }
 .reputation-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .reputation-head > strong { font-size: 12px; }
@@ -485,7 +486,7 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .risk-finding > span { padding-top: 3px; color: var(--muted); font: 700 9px/1 var(--mono); }
 .risk-finding.medium > span { color: var(--warning); }
 .risk-finding.high > span { color: var(--critical); }
-.risk-finding h4 { margin: 0 0 5px; font-size: 13px; }
+.risk-finding :is(h3,h4) { margin: 0 0 5px; font-size: 13px; }
 .risk-finding p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .risk-finding code { display: block; margin-top: 7px; color: var(--muted); font: 400 9px/1 var(--mono); }
 .risk-boundary { margin: 0; padding: 15px 20px; font: 400 12px/1.55 var(--mono); }
@@ -840,7 +841,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .dep-src, .takeover-detail span, .dep-flag-auth, .dep-svc, .dependency .party { color: var(--muted); }
   .metric strong.good, .status-code:not(.redirect):not(.error), .section-number,
   .dns-title strong, .observation-note strong, .dep-d-name { color: var(--accent); }
-  .report-header h2, .hop-main strong, .report-header > div > a { letter-spacing: normal; }
+  #report-host, .hop-main strong, .report-header > div > a { letter-spacing: normal; }
   .hop-main strong, .report-header > div > a { white-space: normal; overflow-wrap: anywhere; }
   .hop, .finding, .risk-finding, .provider-result, .dep-domain, .sdk-item,
   .takeover-row, .metric, .ssl-row, .dns-group { break-inside: avoid; }
@@ -893,3 +894,12 @@ body:has(#report:not(.hidden)) .hero h1 { display:none; }
 .supporting-details[open] > summary { margin-bottom:20px; }
 .supporting-details .developer-links { margin-top:20px; }
 @media print { .export-menu, .report-actions, .report-share-note { display:none; } }
+
+/* Keep repeat diagnostics close to the report identity. */
+#new-trace-top { flex: 0 0 auto; }
+.reputation-details { margin: 10px 12px 0; }
+.reputation-details > summary { min-height: 44px; padding: 12px 0; cursor: pointer; color: var(--muted); font-size: 13px; }
+.reputation-details .reputation-consent { margin: 0; padding: 0 0 12px; }
+.developer-access { padding-inline: clamp(20px, 4vw, 52px); }
+@media (max-width: 600px) { .hero h1 { letter-spacing: -.03em; } }
+@media print { #new-trace-top { display: none; } }
