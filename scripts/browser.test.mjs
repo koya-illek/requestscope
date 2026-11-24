@@ -83,7 +83,7 @@ const report = {
   },
 };
 
-for (const viewport of [{ width: 1440, height: 1000 }, { width: 768, height: 1024 }, { width: 390, height: 844 }]) {
+for (const viewport of [{ width: 1440, height: 1000 }, { width: 768, height: 1024 }, { width: 390, height: 844 }, { width: 320, height: 844 }]) {
   const context = await browser.newContext({ viewport });
   const page = await context.newPage();
   let submittedExternalReputation = false;
@@ -103,6 +103,12 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 768, height: 102
   await page.locator(".risk-context > summary").click();
   await page.fill("#claimed-organisation", "Microsoft");
   await page.fill("#message-context", "Password reset email");
+  assert.equal(await page.locator(".reputation-details").getAttribute("open"), null);
+  assert.match(await page.locator("#reputation-scope").textContent(), /including query values.*source IP/);
+  await page.locator(".reputation-details summary").focus();
+  await page.keyboard.press("Enter");
+  assert.equal(await page.locator(".reputation-details[open]").count(), 1);
+  await page.screenshot({path: `/tmp/requestscope-options-${viewport.width}.png`, fullPage: true});
   await page.check("#map-deps");
   await page.check("#external-reputation");
   await page.check("#mobile-user-agent");
@@ -147,7 +153,12 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 768, height: 102
   // A derived finding's evidence citation must be a working link to the
   // captured evidence: activating it opens the cited hop's header list and
   // flashes the exact row, instead of leaving the path as inert text.
-  await page.click("#findings .evidence-link");
+  assert.match(await page.locator("#risk-summary").textContent(), /2 assessment findings.*not proof of safety/);
+  assert.equal(await page.locator("#new-trace-top").isVisible(), true);
+  assert.equal(await page.locator("#findings .evidence-link").textContent(), "View Strict-Transport-Security header, hop 2");
+  assert.equal(await page.locator("#findings .evidence-path").textContent(), "http.hops.1.responseHeaders.strict-transport-security");
+  await page.locator("#findings .evidence-link").focus();
+  await page.keyboard.press("Enter");
   await page.waitForFunction(() =>
     Boolean(document.querySelector('#timeline [data-evidence="http.hops.1.responseHeaders.strict-transport-security"]')?.classList.contains("evidence-flash")));
   assert.equal(await page.locator('#timeline .hop:nth-child(2) .hop-evidence[open]').count(), 1,
@@ -180,12 +191,30 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 768, height: 102
     `${viewport.width}px layout has accessibility violations`,
   );
   await page.screenshot({ path: `/tmp/requestscope-risk-${viewport.width}.png`, fullPage: true });
+  // Empty findings are not empty captured evidence or a safety guarantee.
+  await page.click("#new-trace-top");
+  assert.equal(await page.evaluate(() => document.activeElement?.id), "url-input");
+  const empty = structuredClone(report);
+  empty.urlRisk.findings = [];
+  empty.urlRisk.verdict = "low";
+  empty.urlRisk.riskScore = 0;
+  empty.urlRisk.summary = "No strong risk indicators were observed.";
+  empty.urlRisk.reputation = {status: "not_requested", detail: "External reputation checks were not requested.", providers: []};
+  await page.route("**/api/scans/stream", route => route.fulfill({status: 200, contentType: "application/x-ndjson", body: JSON.stringify({type: "result", report: empty}) + "\n"}));
+  await page.fill("#url-input", report.requestedUrl);
+  await page.click("#trace-button");
+  await page.waitForSelector("#risk-verdict.low");
+  await page.waitForSelector("#progress-panel", { state: "hidden" });
+  assert.match(await page.locator("#risk-summary").textContent(), /0 assessment findings.*not proof of safety/);
+  assert.match(await page.locator("#reputation-results").textContent(), /not requested/);
+  await page.screenshot({path: `/tmp/requestscope-empty-${viewport.width}.png`, fullPage: true});
+
   await context.close();
 }
 
 // The privacy notice is a canonical product page, so it receives the same
 // responsive, keyboard, and automated accessibility checks as the trace UI.
-for (const viewport of [{ width: 1440, height: 1000 }, { width: 768, height: 1024 }, { width: 390, height: 844 }]) {
+for (const viewport of [{ width: 1440, height: 1000 }, { width: 768, height: 1024 }, { width: 390, height: 844 }, { width: 320, height: 844 }]) {
   const context = await browser.newContext({ viewport });
   const page = await context.newPage();
   await page.goto(pathToFileURL(path.resolve(webRoot, "privacy.html")).href);
@@ -633,6 +662,34 @@ const download = await downloadPromise;
 assert.equal(download.suggestedFilename(), "requestscope-abcdefghijklmnop.json");
 await download.cancel();
 assert.equal(exportDownloads, 1, "the verified response becomes exactly one download");
+// Abandoning an export must not download old evidence, misname it for the
+// destination, or surface its delayed error over a replacement report.
+await exportPage.route("**/api/scans/qrstuvwxyzABCDEF", async (route) => {
+  await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...report, id: "qrstuvwxyzABCDEF", hostname: "destination.example" }) });
+});
+for (const delayedStatus of [200, 404]) {
+  let releaseExport;
+  let markStarted;
+  const started = new Promise(resolve => { markStarted = resolve; });
+  const released = new Promise(resolve => { releaseExport = resolve; });
+  await exportPage.route("**/api/scans/abcdefghijklmnop/export", async route => {
+    markStarted();
+    await released;
+    await route.fulfill({ status: delayedStatus, contentType: "application/json", body: JSON.stringify(delayedStatus === 200 ? report : { error: "Old export expired" }) }).catch(() => {});
+  });
+  await exportPage.evaluate(() => { location.hash = "abcdefghijklmnop"; });
+  await exportPage.waitForFunction(() => document.querySelector("#report-host").textContent === "micros0ft.example");
+  if (!await exportPage.locator(".export-menu").evaluate(el => el.open)) await exportPage.locator(".export-menu > summary").click();
+  await exportPage.click("#export-json");
+  await started;
+  await exportPage.evaluate(() => { location.hash = "qrstuvwxyzABCDEF"; });
+  await exportPage.waitForFunction(() => document.querySelector("#report-host").textContent === "destination.example");
+  releaseExport();
+  await exportPage.waitForTimeout(150);
+  assert.equal(exportDownloads, 1, "abandoned exports never create a download");
+  assert.equal(await exportPage.locator("#error-panel:not(.hidden)").count(), 0, "abandoned export errors cannot replace the destination");
+  assert.equal(await exportPage.locator("#export-json").isDisabled(), false, "destination export control is released");
+}
 await exportContext.close();
 
 await browser.close();

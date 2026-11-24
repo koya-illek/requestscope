@@ -61,6 +61,7 @@
     control?.addEventListener("input", updateAdvancedOptionState)
   );
   updateAdvancedOptionState();
+  $("#new-trace-top").addEventListener("click", () => reset());
   $("#new-trace").addEventListener("click", () => reset());
   $("#error-close").addEventListener("click", () => {
     errorPanel.classList.add("hidden");
@@ -93,10 +94,6 @@
   methodDialog.addEventListener("click", (event) => {
     if (event.target === methodDialog) methodDialog.close();
   });
-  // Derived findings cite evidence paths such as
-  // http.hops.1.responseHeaders.cache-control; activating the citation must
-  // take the reader to that captured evidence instead of leaving the path as
-  // inert text.
   $("#findings").addEventListener("click", (event) => {
     const link = event.target instanceof Element ? event.target.closest(".evidence-link") : null;
     if (link?.dataset.path) revealEvidence(link.dataset.path);
@@ -504,7 +501,7 @@
     const services = Array.isArray(risk.services) && risk.services.length
       ? ` · ${risk.services.map((item) => item.organisation || item.hostname).filter(Boolean).slice(0, 6).join(", ")}`
       : "";
-    $("#risk-summary").innerHTML = `<strong>${escapeHtml(risk.summary)}</strong><span>${escapeHtml(risk.confidence)} confidence · ${risk.findings.length} evidence item${risk.findings.length === 1 ? "" : "s"}${escapeHtml(claimed)}${escapeHtml(services)}</span>`;
+    $("#risk-summary").innerHTML = `<strong>${escapeHtml(risk.summary)}</strong><span>${risk.findings.length} assessment finding${risk.findings.length === 1 ? "" : "s"} · ${escapeHtml(risk.confidence)} confidence in the observed assessment, not proof of safety${escapeHtml(claimed)}${escapeHtml(services)}</span>`;
     renderReputation(risk.reputation);
     $("#risk-findings").innerHTML = risk.findings.length
       ? risk.findings.map((item) => `<article class="risk-finding ${enumToken(item.severity, ["low", "medium", "high"])}">
@@ -539,8 +536,11 @@
     return "External reputation provider";
   }
 
-  /** Walk up the evidence path (http.hops.1.responseHeaders.cache-control →
-   * … → http) until a rendered surface stamped with that path is found. */
+  function evidenceLabel(path) {
+    const h = /^http\.hops\.(\d+)(?:\.responseHeaders\.(.+))?/.exec(path);
+    return h ? `View ${h[2] ? h[2].replace(/(^|-)[a-z]/g, c => c.toUpperCase()) + " header, " : "request "}hop ${+h[1] + 1}` : `View ${path.startsWith("dns") ? "DNS" : path.startsWith("dependencies") ? "dependency" : "captured"} evidence`;
+  }
+
   function evidenceTarget(path) {
     const parts = String(path).split(".");
     while (parts.length) {
@@ -617,8 +617,7 @@
     });
   }
 
-  /** The findings cite evidence paths like
-   * http.hops.1.responseHeaders.cache-control; this is where that evidence
+  /** Show cited response-header evidence
    * becomes visible. Values are already redacted server-side before storage.
    * Each row is stamped with its path so citations can scroll straight to it. */
   function renderHopHeaders(hop) {
@@ -684,7 +683,7 @@
     $("#findings").innerHTML = findings.length ? findings.map((item) => `<article class="finding ${enumToken(item.severity, ["info", "positive", "warning", "critical"])}">
       <span class="finding-dot" aria-hidden="true"></span>
       <span class="visually-hidden">${escapeHtml(item.severity)}</span>
-      <div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.detail)}</p><div class="finding-meta"><button type="button" class="evidence-link" title="Show this evidence in the report" data-path="${escapeAttr(item.evidencePath)}">${escapeHtml(item.evidencePath)}</button><span> · ${escapeHtml(item.confidence)} confidence</span></div></div>
+      <div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.detail)}</p><div class="finding-meta"><button type="button" class="evidence-link" data-path="${escapeAttr(item.evidencePath)}">${escapeHtml(evidenceLabel(item.evidencePath))}</button><code class="evidence-path">${escapeHtml(item.evidencePath)}</code><span> · ${escapeHtml(item.confidence)} confidence</span></div></div>
     </article>`).join("") : `<div class="dns-group"><p class="dns-empty">No derived findings were generated.</p></div>`;
   }
 
@@ -929,15 +928,16 @@
     field.select();
   }
 
-  /** The download is built from a verified response: pointing the anchor at
-   * the endpoint directly would save an expired report's 404 error body as
-   * requestscope-<id>.json with no other feedback. */
+  // Verify HTTP success and view ownership before downloading evidence.
   async function exportJson() {
     if (!state.report) return;
+    const report = state.report, revision = viewRevision;
+    const ownsExport = () => revision === viewRevision && state.report === report;
     const button = $("#export-json");
     flashButton(button, "Preparing…");
     try {
-      const response = await fetch(`${API_BASE}/api/scans/${encodeURIComponent(state.report.id)}/export`);
+      const response = await fetch(`${API_BASE}/api/scans/${encodeURIComponent(report.id)}/export`);
+      if (!ownsExport()) return;
       if (!response.ok) {
         let message = `The report could not be exported (HTTP ${response.status}).`;
         try {
@@ -949,13 +949,15 @@
         throw new Error(message);
       }
       const blob = await response.blob();
+      if (!ownsExport()) return;
       const anchor = document.createElement("a");
       anchor.href = URL.createObjectURL(blob);
-      anchor.download = `requestscope-${state.report.id}.json`;
+      anchor.download = `requestscope-${report.id}.json`;
       anchor.click();
       setTimeout(() => URL.revokeObjectURL(anchor.href), 10_000);
       flashButton(button, "Exported");
     } catch (error) {
+      if (!ownsExport()) return;
       flashButton(button, "Export failed");
       if (error instanceof TypeError) {
         showError("Network request failed. Check your connection and try again.", "EXPORT_FAILED");
