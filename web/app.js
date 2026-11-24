@@ -80,20 +80,11 @@
   $("#radar-cancel").addEventListener("click", () => radarDialog.close());
   $("#radar-close").addEventListener("click", () => radarDialog.close());
   $("#radar-confirm").addEventListener("click", confirmRadarHandoff);
-  radarDialog.addEventListener("click", (event) => {
-    if (event.target === radarDialog) radarDialog.close();
-  });
   $("#link-select").addEventListener("click", selectShareLink);
   $("#link-close").addEventListener("click", () => linkDialog.close());
-  linkDialog.addEventListener("click", (event) => {
-    if (event.target === linkDialog) linkDialog.close();
-  });
   $("#method-button").addEventListener("click", () => methodDialog.showModal());
   $("#footer-method-button").addEventListener("click", () => methodDialog.showModal());
   $("#dialog-close").addEventListener("click", () => methodDialog.close());
-  methodDialog.addEventListener("click", (event) => {
-    if (event.target === methodDialog) methodDialog.close();
-  });
   $("#findings").addEventListener("click", (event) => {
     const link = event.target instanceof Element ? event.target.closest(".evidence-link") : null;
     if (link?.dataset.path) revealEvidence(link.dataset.path);
@@ -331,7 +322,7 @@
     progressPanel.classList.toggle("minimal", minimal);
     if (minimal) {
       state.progressStages = [];
-      $("#progress-steps").innerHTML = "";
+      $("#progress-steps").replaceChildren();
     } else {
       state.progressStages = [
         { key: "input", label: "Validate target" },
@@ -520,7 +511,7 @@
   function renderReputation(reputation) {
     const target = $("#reputation-results");
     if (!reputation) {
-      target.innerHTML = "";
+      target.replaceChildren();
       return;
     }
     const providers = reputation.providers || [];
