@@ -7,7 +7,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
 
 const webRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "web");
-const browser = await chromium.launch({ executablePath: "/snap/bin/chromium", headless: true });
+const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || "/snap/bin/chromium", headless: true });
 const report = {
   schemaVersion: 1,
   id: "abcdefghijklmnop",
@@ -115,6 +115,21 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 768, height: 102
   await page.click("#trace-button");
   await page.waitForSelector("#risk-verdict.high", { state: "visible" });
   assert.equal(await page.textContent("#risk-verdict"), "HIGH · 66/100");
+  const riskBounds = await page.locator("#risk-overview").boundingBox();
+  const metricBounds = await page.locator("#metrics").boundingBox();
+  assert.ok(riskBounds.y < metricBounds.y, "risk must precede transport success");
+  assert.match(await page.textContent("#metrics"), /HTTP response status/);
+  await page.locator(".evidence-reference summary").first().focus();
+  await page.keyboard.press("Enter");
+  assert.equal(await page.locator(".evidence-reference .evidence-path").first().isVisible(), true);
+  if (viewport.width <= 390) {
+    const metadata = await page.locator(".ssl-row").first().evaluate(row => ({
+      label: row.querySelector(".ssl-label").getBoundingClientRect().bottom,
+      value: row.querySelector(".ssl-value").getBoundingClientRect().top
+    }));
+    assert.ok(metadata.value >= metadata.label, "narrow metadata stacks label above value");
+  }
+
   assert.equal(await page.locator(".risk-finding").count(), 2);
   assert.equal(submittedExternalReputation, true);
   assert.equal(submittedMobileUserAgent, true);
@@ -584,8 +599,10 @@ await cancelPage.fill("#url-input", "https://micros0ft.example/login");
 await cancelPage.click("#trace-button");
 await cancelPage.waitForSelector("#progress-panel:not(.hidden)");
 await cancelPage.click("#cancel-trace");
-await cancelPage.waitForSelector("#error-panel:not(.hidden)");
-assert.equal(await cancelPage.textContent("#error-message"), "Trace cancelled.");
+await cancelPage.waitForFunction(() => document.activeElement?.id === "url-input");
+assert.equal(await cancelPage.locator("#error-panel.hidden").count(), 1);
+assert.match(await cancelPage.textContent("#trace-status"), /Trace cancelled.*target and options have been kept/);
+assert.equal(await cancelPage.inputValue("#url-input"), "https://micros0ft.example/login");
 assert.equal(await cancelPage.locator("#progress-panel.hidden").count(), 1);
 assert.equal(await cancelPage.locator("#trace-button[disabled]").count(), 0);
 // The form must stay usable for a fresh trace without reloading.
