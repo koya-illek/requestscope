@@ -122,6 +122,8 @@
       </div>
     </section>
 
+    <p class="trace-status" id="trace-status" role="status"></p>
+
     <section class="progress-panel hidden" id="progress-panel" aria-live="polite">
       <div class="progress-head">
         <div>
@@ -169,6 +171,12 @@
         <button class="secondary-button" id="new-trace-top" type="button">New trace</button>
       </header>
 
+      <section class="panel risk-overview hidden" id="risk-overview" aria-labelledby="risk-overview-title">
+        <div class="panel-header"><h3 id="risk-overview-title">URL risk assessment</h3><span class="risk-verdict" id="risk-verdict">ASSESSING</span></div>
+        <div class="risk-summary" id="risk-summary"></div>
+        <p class="risk-boundary">An HTTP response is not a safety verdict. Review the security evidence before visiting or entering information.</p>
+      </section>
+      <p class="transport-note">HTTP transport observations · response success does not establish safety.</p>
       <div class="metrics" id="metrics"></div>
 
 
@@ -184,10 +192,8 @@
 
       <section class="panel risk-panel" id="risk-panel">
         <div class="panel-header">
-          <div><span class="section-number">RISK</span><h3>URL security assessment</h3></div>
-          <span class="risk-verdict" id="risk-verdict">ASSESSING</span>
+          <div><span class="section-number">RISK</span><h3>Security assessment evidence</h3></div>
         </div>
-        <div class="risk-summary" id="risk-summary"></div>
         <div class="reputation-results" id="reputation-results"></div>
         <div class="risk-findings" id="risk-findings"></div>
         <p class="risk-boundary" id="risk-boundary"></p>

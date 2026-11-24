@@ -73,8 +73,8 @@
     cancelRequested = true;
     activeController?.abort();
   });
-  $("#copy-link").addEventListener("click", copyShareLink);
-  $("#copy-markdown").addEventListener("click", copyReportMarkdown);
+  $("#copy-link").addEventListener("click", () => copyReport(false));
+  $("#copy-markdown").addEventListener("click", () => copyReport(true));
   $("#export-json").addEventListener("click", exportJson);
   $("#cloudflare-scan").addEventListener("click", openCloudflareScan);
   $("#radar-cancel").addEventListener("click", () => radarDialog.close());
@@ -227,9 +227,8 @@
       if(activeController!==controller)return;
       stopProgress();
       if (error.name === "AbortError") {
-        showError(cancelRequested
-          ? "Trace cancelled."
-          : "The trace stalled with no updates for 45 seconds and was cancelled. Please try again.");
+        if (cancelRequested) showCancelled("Trace cancelled.");
+        else showError("The trace stalled with no updates for 45 seconds and was cancelled. Please try again.");
       } else if (error instanceof TypeError) {
         showError("Network request failed. Check your connection and try again.");
       } else {
@@ -307,11 +306,10 @@
       if(activeController!==controller)return;
       stopProgress();
       if (error.name === "AbortError") {
-        showError(cancelRequested
-          ? "Loading cancelled."
-          : idleTimedOut
-            ? "Loading the saved report stalled with no updates for 45 seconds and was cancelled. Please try again."
-            : "Loading the saved report timed out. Please try again.");
+        if (cancelRequested) showCancelled("Loading cancelled.");
+        else showError(idleTimedOut
+          ? "Loading the saved report stalled with no updates for 45 seconds and was cancelled. Please try again."
+          : "Loading the saved report timed out. Please try again.");
       } else if (error instanceof TypeError) {
         showError("Network request failed. Check your connection and try again.");
       } else {
@@ -327,6 +325,7 @@
   }
 
   function beginProgress(title = "Tracing request path", minimal = false) {
+    $("#trace-status").textContent = "";
     state.progressStep = 0;
     state.routeStep = 0;
     progressPanel.classList.toggle("minimal", minimal);
@@ -381,6 +380,12 @@
 
   function stopProgress() {
     progressPanel.classList.add("hidden");
+  }
+
+  function showCancelled(message) {
+    errorPanel.classList.add("hidden");
+    $("#trace-status").textContent = `${message} Your target and options have been kept.`;
+    input.focus();
   }
 
   function showError(message, code = "TRACE_FAILED") {
@@ -469,13 +474,12 @@
 
   function renderMetrics(report) {
     const finalStatus = report.http.finalStatus ?? "Unavailable";
-    const statusClass = Number(finalStatus) >= 200 && Number(finalStatus) < 400 ? "good" : "warn";
     const redirectCount = report.http.hops.filter((hop) => [301, 302, 303, 307, 308].includes(hop.status) && hop.location).length;
     // A trace that ended on a PDF or an API response has no resource
     // references to count; showing 0 would claim a measurement never made.
     const inspectedHtml = /(?:text\/html|application\/xhtml\+xml)/i.test(report.http.contentType || "");
     const metrics = [
-      ["Final status", finalStatus, statusClass],
+      ["HTTP response status", finalStatus, ""],
       ["Total trace time", formatMs(report.totalDurationMs), ""],
       ["Redirects", redirectCount, redirectCount <= 2 ? "good" : "warn"],
       ["DNS addresses", report.dns.addresses.length, report.dns.addresses.length ? "good" : "warn"],
@@ -488,6 +492,7 @@
 
   function renderUrlRisk(risk) {
     const panel = $("#risk-panel");
+    $("#risk-overview").classList.toggle("hidden", !risk);
     if (!risk) {
       panel.classList.add("hidden");
       return;
@@ -683,7 +688,7 @@
     $("#findings").innerHTML = findings.length ? findings.map((item) => `<article class="finding ${enumToken(item.severity, ["info", "positive", "warning", "critical"])}">
       <span class="finding-dot" aria-hidden="true"></span>
       <span class="visually-hidden">${escapeHtml(item.severity)}</span>
-      <div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.detail)}</p><div class="finding-meta"><button type="button" class="evidence-link" data-path="${escapeAttr(item.evidencePath)}">${escapeHtml(evidenceLabel(item.evidencePath))}</button><code class="evidence-path">${escapeHtml(item.evidencePath)}</code><span> · ${escapeHtml(item.confidence)} confidence</span></div></div>
+      <div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.detail)}</p><div class="finding-meta"><button type="button" class="evidence-link" data-path="${escapeAttr(item.evidencePath)}">${escapeHtml(evidenceLabel(item.evidencePath))}</button><details class="evidence-reference"><summary>Evidence reference</summary><textarea class="evidence-path" aria-label="Evidence reference" rows="2" readonly>${escapeHtml(item.evidencePath)}</textarea></details><span> · ${escapeHtml(item.confidence)} confidence</span></div></div>
     </article>`).join("") : `<div class="dns-group"><p class="dns-empty">No derived findings were generated.</p></div>`;
   }
 
@@ -725,36 +730,20 @@
     return "No matching resource references were extracted from the inspected HTML.";
   }
 
-  async function copyShareLink() {
+  async function copyReport(markdown) {
     if (!state.report) return;
-    const link = `${location.origin}${location.pathname}#${state.report.id}`;
+    const value = markdown ? buildReportMarkdown(state.report) : `${location.origin}${location.pathname}#${state.report.id}`;
     try {
-      await navigator.clipboard.writeText(link);
-      flashButton($("#copy-link"), "Copied");
+      await navigator.clipboard.writeText(value);
+      flashButton($(markdown ? "#copy-markdown" : "#copy-link"), "Copied");
     } catch {
       // Clipboard permission or focus rules blocked the write; the link
       // becomes a designed, selectable surface instead of a blocking prompt.
       openManualCopyDialog({
-        title: "Copy this report link",
-        description: "Automatic copying was blocked by the browser. Select the link below and copy it manually.",
-        fieldLabel: "Share link",
-        value: link,
-      });
-    }
-  }
-
-  async function copyReportMarkdown() {
-    if (!state.report) return;
-    const markdown = buildReportMarkdown(state.report);
-    try {
-      await navigator.clipboard.writeText(markdown);
-      flashButton($("#copy-markdown"), "Copied");
-    } catch {
-      openManualCopyDialog({
-        title: "Copy this report as Markdown",
-        description: "Automatic copying was blocked by the browser. Select the markdown below and copy it manually.",
-        fieldLabel: "Markdown report",
-        value: markdown,
+        title: markdown ? "Copy this report as Markdown" : "Copy this report link",
+        description: `Automatic copying was blocked by the browser. Select the ${markdown ? "markdown" : "link"} below and copy it manually.`,
+        fieldLabel: markdown ? "Markdown report" : "Share link",
+        value,
       });
     }
   }

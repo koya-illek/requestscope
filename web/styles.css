@@ -414,8 +414,6 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .observation-note { display: grid; grid-template-columns: 190px 1fr; gap: 20px; margin-top: 20px; padding: 20px; border-left: 2px solid var(--accent); background: rgba(89, 240, 167, .05); }
 .observation-note strong { font: 500 11px/1.5 var(--mono); color: var(--accent); text-transform: uppercase; }
 .observation-note p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
-
-/* Dependency map */
 .trace-options {
   max-width: 900px;
   margin-top: 18px;
@@ -500,8 +498,6 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .dep-map-summary strong { font-size: 18px; margin-right: 4px; }
 .dep-map-summary strong.warn { color: var(--warning); }
 .dep-map-summary strong.good { color: var(--accent); }
-
-/* Collapsible sections */
 .collapsible-section {
   border-bottom: 1px solid var(--line);
 }
@@ -556,8 +552,6 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .cs-body {
   padding: 0 20px 20px;
 }
-
-/* Certificate history grid */
 .ssl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
 .ssl-row {
   display: flex; justify-content: space-between; align-items: center;
@@ -569,8 +563,6 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .ssl-value { color: var(--text); font: 400 11px/1 var(--mono); text-align: right; }
 .ssl-value.good { color: var(--accent); }
 .ssl-value.warn { color: var(--warning); }
-
-/* SDK list */
 .sdk-list { display: flex; flex-direction: column; gap: 1px; }
 .sdk-item {
   display: grid; grid-template-columns: 110px 1fr auto; gap: 12px; align-items: center;
@@ -581,8 +573,6 @@ h1 em { color: var(--accent); font-style: normal; font-weight: 500; }
 .sdk-item:last-child { border-bottom: 0; }
 .sdk-name { color: var(--text); font-weight: 500; }
 .sdk-domain { color: var(--muted); font-size: 10px; }
-
-/* Takeover */
 .takeover-row {
   display: grid; grid-template-columns: 120px 1fr; gap: 14px;
   padding: 12px 0; border-bottom: 1px solid var(--line);
@@ -741,8 +731,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 }
 
 .skip-link:focus-visible { outline-offset: 4px; }
-
-/* Secondary text remains readable on the dark surface at normal text sizes. */
 .dns-empty, .reputation-consent, .risk-context > p, .risk-boundary,
 .dep-src, .takeover-detail span, .dep-flag-auth, .dep-svc, .dependency .party { color: #89a99b; }
 
@@ -764,7 +752,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   h1 { font-size: clamp(48px, 16vw, 76px); }
   .privacy-page h1 { font-size: clamp(44px, 14vw, 64px); }
   .input-shell { height: auto; grid-template-columns: auto 1fr; }
-  /* ≥16px keeps Safari from zooming the viewport when the field is focused. */
   .input-shell input { height: 64px; padding-right: 12px; font-size: 16px; }
   .input-shell button { grid-column: 1 / -1; min-height: 56px; }
   .progress-steps { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -834,7 +821,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .grid-field, .skip-link, .site-header, .hero, .progress-panel, .error-panel,
   .principles, .developer-access, footer, .report-actions, .filter-set,
   .dialog-close { display: none !important; }
-  /* Dark translucent surfaces would sit on white paper as unreadable slabs. */
   .panel, .reputation-results, .hop-header-list { background: #fff; }
   .observation-note, .deps-toggle, .trace-options, .risk-context { background: none; }
   .dns-empty, .reputation-consent, .risk-context > p, .risk-boundary,
@@ -848,8 +834,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .panel-header, .section-heading { break-after: avoid; }
   a { text-decoration: underline; }
 }
-
-/* Keep the task and its result ahead of introductory material. */
 @media screen {
   .hero { padding-top: 48px; padding-bottom: 28px; }
   .hero h1 { font-size: clamp(36px, 5vw, 64px); }
@@ -894,8 +878,6 @@ body:has(#report:not(.hidden)) .hero h1 { display:none; }
 .supporting-details[open] > summary { margin-bottom:20px; }
 .supporting-details .developer-links { margin-top:20px; }
 @media print { .export-menu, .report-actions, .report-share-note { display:none; } }
-
-/* Keep repeat diagnostics close to the report identity. */
 #new-trace-top { flex: 0 0 auto; }
 .reputation-details { margin: 10px 12px 0; }
 .reputation-details > summary { min-height: 44px; padding: 12px 0; cursor: pointer; color: var(--muted); font-size: 13px; }
@@ -903,3 +885,5 @@ body:has(#report:not(.hidden)) .hero h1 { display:none; }
 .developer-access { padding-inline: clamp(20px, 4vw, 52px); }
 @media (max-width: 600px) { .hero h1 { letter-spacing: -.03em; } }
 @media print { #new-trace-top { display: none; } }
+
+.risk-overview{margin-block:20px 28px;}.risk-overview .panel-header{flex-wrap:wrap;gap:12px;}.risk-overview .risk-summary{grid-template-columns:1fr;gap:12px;}.transport-note,.trace-status{color:var(--muted);line-height:1.6;}.trace-status:empty{display:none;}.evidence-reference{inline-size:100%;}.evidence-reference summary{cursor:pointer;padding-block:10px;}.evidence-reference .evidence-path{display:block;margin-block:8px 12px;inline-size:100%;resize:vertical;color:var(--text);background:var(--surface);border:1px solid var(--line);padding:8px;}@media (max-width:600px){.ssl-grid{grid-template-columns:minmax(0,1fr);}.ssl-row{display:grid;grid-template-columns:1fr;gap:8px;}.ssl-label{font-size:12px;line-height:1.5;letter-spacing:.02em;}.ssl-value{text-align:start;font-size:13px;line-height:1.5;overflow-wrap:anywhere;}}
